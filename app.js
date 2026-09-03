@@ -10,26 +10,7 @@
   // state.history: [{ startISO, endISO, targetHours }]
   let state = load();
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const merged = Object.assign({
-          current: null,
-          history: [],
-          lastTargetHours: 16,
-          notifyDismissed: false,
-          notificationsEnabled: true,
-          remindAtGoal: true,
-          preReminderEnabled: false,
-          preReminderMinutes: 30,
-        }, parsed);
-        // migrate old data where 0 meant "off" via the select alone
-        if (![15, 30, 60].includes(merged.preReminderMinutes)) merged.preReminderMinutes = 30;
-        return merged;
-      }
-    } catch (e) {}
+  function defaultState() {
     return {
       current: null,
       history: [],
@@ -39,7 +20,23 @@
       remindAtGoal: true,
       preReminderEnabled: false,
       preReminderMinutes: 30,
+      theme: 'light',
     };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const merged = Object.assign(defaultState(), parsed);
+        // migrate old data where 0 meant "off" via the select alone
+        if (![15, 30, 60].includes(merged.preReminderMinutes)) merged.preReminderMinutes = 30;
+        if (!['light', 'dark', 'system'].includes(merged.theme)) merged.theme = 'light';
+        return merged;
+      }
+    } catch (e) {}
+    return defaultState();
   }
 
   function save() {
@@ -76,6 +73,7 @@
     statLongest: document.getElementById('statLongest'),
     statTotalTime: document.getElementById('statTotalTime'),
     statDays: document.getElementById('statDays'),
+    statHitRate: document.getElementById('statHitRate'),
     notifyBtn: document.getElementById('notifyBtn'),
     notifyBanner: document.getElementById('notifyBanner'),
     notifyEnableBtn: document.getElementById('notifyEnableBtn'),
@@ -83,8 +81,9 @@
     importFile: document.getElementById('importFile'),
     chartBars: document.getElementById('chartBars'),
     chartLabels: document.getElementById('chartLabels'),
-    chartWrap: document.getElementById('chartWrap'),
+    addFastBtn: document.getElementById('addFastBtn'),
     // settings
+    themeToggle: document.getElementById('themeToggle'),
     defaultTargetPicker: document.getElementById('defaultTargetPicker'),
     defaultCustomTargetWrap: document.getElementById('defaultCustomTargetWrap'),
     defaultCustomTargetInput: document.getElementById('defaultCustomTargetInput'),
@@ -97,6 +96,20 @@
     settingsExportBtn: document.getElementById('settingsExportBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
     resetDataBtn: document.getElementById('resetDataBtn'),
+    // fast add/edit modal
+    fastEditModal: document.getElementById('fastEditModal'),
+    fastEditTitle: document.getElementById('fastEditTitle'),
+    fastEditStartInput: document.getElementById('fastEditStartInput'),
+    fastEditEndInput: document.getElementById('fastEditEndInput'),
+    fastEditTargetInput: document.getElementById('fastEditTargetInput'),
+    fastEditCancelBtn: document.getElementById('fastEditCancelBtn'),
+    fastEditSaveBtn: document.getElementById('fastEditSaveBtn'),
+    // generic dialog
+    dialogModal: document.getElementById('dialogModal'),
+    dialogTitle: document.getElementById('dialogTitle'),
+    dialogMessage: document.getElementById('dialogMessage'),
+    dialogOkBtn: document.getElementById('dialogOkBtn'),
+    dialogCancelBtn: document.getElementById('dialogCancelBtn'),
   };
 
   el.ringProgress.style.strokeDasharray = RING_CIRC;
@@ -104,6 +117,76 @@
   let tickInterval = null;
   let selectedTargetHours = state.lastTargetHours || 16;
   let currentChartPeriod = 'week';
+  let editingFastIndex = null; // null = adding a new fast; number = editing state.history[idx]
+
+  // ---------- Generic styled dialog (replaces confirm()/alert()) ----------
+  let dialogResolve = null;
+
+  function showDialog({ title, message, okText = 'OK', cancelText = 'Cancel', showCancel = true, danger = false }) {
+    return new Promise((resolve) => {
+      el.dialogTitle.textContent = title;
+      el.dialogMessage.textContent = message;
+      el.dialogOkBtn.textContent = okText;
+      el.dialogCancelBtn.textContent = cancelText;
+      el.dialogCancelBtn.style.display = showCancel ? '' : 'none';
+      el.dialogOkBtn.classList.toggle('stop', !!danger);
+      dialogResolve = resolve;
+      el.dialogModal.classList.remove('hidden');
+    });
+  }
+
+  function closeDialog(result) {
+    el.dialogModal.classList.add('hidden');
+    if (dialogResolve) {
+      const r = dialogResolve;
+      dialogResolve = null;
+      r(result);
+    }
+  }
+
+  el.dialogOkBtn.addEventListener('click', () => closeDialog(true));
+  el.dialogCancelBtn.addEventListener('click', () => closeDialog(false));
+
+  function showAlert(title, message) {
+    return showDialog({ title, message, showCancel: false, okText: 'OK' });
+  }
+
+  // ---------- Theme ----------
+  function resolveTheme() {
+    if (state.theme === 'system') {
+      return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    return state.theme;
+  }
+
+  function applyTheme() {
+    const resolved = resolveTheme();
+    document.documentElement.setAttribute('data-theme', resolved);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0f1115' : '#f4f5f7');
+    if (el.themeToggle) {
+      el.themeToggle.querySelectorAll('.theme-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.theme === state.theme);
+      });
+    }
+  }
+
+  if (el.themeToggle) {
+    el.themeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.theme-btn');
+      if (!btn) return;
+      state.theme = btn.dataset.theme;
+      save();
+      applyTheme();
+    });
+  }
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => { if (state.theme === 'system') applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
 
   // ---------- View navigation ----------
   function showView(id) {
@@ -257,6 +340,8 @@
     el.preReminderToggle.setAttribute('aria-checked', String(!!state.preReminderEnabled));
     el.preReminderMinutesWrap.classList.toggle('hidden', !state.preReminderEnabled);
     el.preReminderSelect.value = String(state.preReminderMinutes || 30);
+
+    applyTheme();
   }
 
   function requestNotifPermission(cb) {
@@ -268,7 +353,7 @@
     });
   }
 
-  el.notifyBtn.addEventListener('click', () => {
+  el.notifyBtn.addEventListener('click', async () => {
     const perm = notifPermission();
     if (perm === 'default') {
       requestNotifPermission((perm2) => {
@@ -279,9 +364,9 @@
         }
       });
     } else if (perm === 'denied') {
-      alert('Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings to get alerts.');
+      await showAlert('Notifications blocked', 'Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings to get alerts.');
     } else {
-      alert(notificationsActive() ? 'Notifications are enabled.' : 'Notifications are turned off. Enable them in Settings.');
+      await showAlert('Notifications', notificationsActive() ? 'Notifications are enabled.' : 'Notifications are turned off. Enable them in Settings.');
     }
   });
 
@@ -301,10 +386,10 @@
     updateNotifUI();
   });
 
-  el.settingsNotifToggle.addEventListener('click', () => {
+  el.settingsNotifToggle.addEventListener('click', async () => {
     const perm = notifPermission();
     if (perm === 'denied') {
-      alert('Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings first.');
+      await showAlert('Notifications blocked', 'Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings first.');
       return;
     }
     if (perm === 'default') {
@@ -390,7 +475,7 @@
     if (document.visibilityState === 'visible') checkNotificationCatchUp();
   });
 
-  // ---------- Edit start time ----------
+  // ---------- Edit start time (active fast) ----------
   el.editStartBtn.addEventListener('click', () => {
     if (!state.current) return;
     const d = new Date(state.current.startISO);
@@ -402,17 +487,26 @@
     el.editModal.classList.add('hidden');
   });
 
-  el.editSaveBtn.addEventListener('click', () => {
+  el.editSaveBtn.addEventListener('click', async () => {
     const val = el.editStartInput.value;
     if (val && state.current) {
       const newDate = new Date(val);
-      if (newDate.getTime() < Date.now()) {
-        state.current.startISO = newDate.toISOString();
-        state.current.goalNotified = false;
-        state.current.preReminderNotified = false;
-        save();
-        render();
+      const now = Date.now();
+      if (isNaN(newDate.getTime()) || newDate.getTime() >= now) {
+        el.editModal.classList.add('hidden');
+        await showAlert('Invalid time', "Start time must be in the past.");
+        return;
       }
+      if ((now - newDate.getTime()) / 3600000 > 720) {
+        el.editModal.classList.add('hidden');
+        await showAlert('Invalid time', "That's more than 30 days ago — double check the date.");
+        return;
+      }
+      state.current.startISO = newDate.toISOString();
+      state.current.goalNotified = false;
+      state.current.preReminderNotified = false;
+      save();
+      render();
     }
     el.editModal.classList.add('hidden');
   });
@@ -421,6 +515,69 @@
     const pad = (n) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
+
+  // ---------- Add / edit a past fast ----------
+  function openFastEditModal(idx) {
+    editingFastIndex = idx;
+    let entry;
+    if (idx === null) {
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - (state.lastTargetHours || 16) * 3600000);
+      entry = { startISO: defaultStart.toISOString(), endISO: now.toISOString(), targetHours: state.lastTargetHours || 16 };
+      el.fastEditTitle.textContent = 'Add fast';
+    } else {
+      entry = state.history[idx];
+      el.fastEditTitle.textContent = 'Edit fast';
+    }
+    el.fastEditStartInput.value = toLocalInputValue(new Date(entry.startISO));
+    el.fastEditEndInput.value = toLocalInputValue(new Date(entry.endISO));
+    el.fastEditTargetInput.value = entry.targetHours;
+    el.fastEditModal.classList.remove('hidden');
+  }
+
+  el.addFastBtn.addEventListener('click', () => openFastEditModal(null));
+
+  el.fastEditCancelBtn.addEventListener('click', () => {
+    el.fastEditModal.classList.add('hidden');
+  });
+
+  el.fastEditSaveBtn.addEventListener('click', async () => {
+    const startVal = el.fastEditStartInput.value;
+    const endVal = el.fastEditEndInput.value;
+    const targetVal = Number(el.fastEditTargetInput.value);
+
+    if (!startVal || !endVal || !targetVal || targetVal <= 0) {
+      await showAlert('Missing info', 'Please fill in start, end, and a goal greater than 0.');
+      return;
+    }
+    const startDate = new Date(startVal);
+    const endDate = new Date(endVal);
+    if (endDate <= startDate) {
+      await showAlert('Invalid times', 'End time must be after start time.');
+      return;
+    }
+    if (endDate.getTime() > Date.now()) {
+      await showAlert('Invalid times', "End time can't be in the future.");
+      return;
+    }
+    const durationCheckH = (endDate - startDate) / 3600000;
+    if (durationCheckH > 720) {
+      await showAlert('Invalid times', "That fast is longer than 30 days — double check the start and end dates.");
+      return;
+    }
+
+    const newEntry = { startISO: startDate.toISOString(), endISO: endDate.toISOString(), targetHours: targetVal };
+    if (editingFastIndex === null) {
+      state.history.push(newEntry);
+    } else {
+      state.history[editingFastIndex] = newEntry;
+    }
+    state.history.sort((a, b) => new Date(b.startISO) - new Date(a.startISO));
+    save();
+    el.fastEditModal.classList.add('hidden');
+    renderHistory();
+    renderChart();
+  });
 
   // ---------- Rendering: timer ----------
   function formatElapsed(ms) {
@@ -528,6 +685,9 @@
         <div class="hi-right">
           <span class="hi-badge ${hit ? 'hit' : 'miss'}">${entry.targetHours}h goal</span>
           <span class="hi-duration">${formatHoursShort(durationH)}</span>
+          <button class="hi-edit" data-idx="${idx}" aria-label="Edit">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
           <button class="hi-del" data-idx="${idx}" aria-label="Delete">
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
           </button>
@@ -536,8 +696,21 @@
       el.historyList.appendChild(li);
     });
 
-    document.querySelectorAll('.hi-del').forEach(btn => {
+    document.querySelectorAll('.hi-edit').forEach(btn => {
       btn.addEventListener('click', () => {
+        openFastEditModal(Number(btn.dataset.idx));
+      });
+    });
+
+    document.querySelectorAll('.hi-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ok = await showDialog({
+          title: 'Delete this fast?',
+          message: "This removes it from your history. This can't be undone.",
+          okText: 'Delete',
+          danger: true,
+        });
+        if (!ok) return;
         const idx = Number(btn.dataset.idx);
         state.history.splice(idx, 1);
         save();
@@ -577,11 +750,13 @@
       el.statLongest.textContent = '0h';
       el.statTotalTime.textContent = '0h';
       el.statDays.textContent = '0';
+      el.statHitRate.textContent = '0%';
       return;
     }
 
     let totalH = 0;
     let longestH = 0;
+    let hitCount = 0;
     const daysWithHit = new Set();
     const daysCovered = new Set();
 
@@ -591,14 +766,20 @@
       const durationH = (end - start) / 3600000;
       totalH += durationH;
       if (durationH > longestH) longestH = durationH;
-      if (durationH >= e.targetHours) daysWithHit.add(dateKey(end));
+      if (durationH >= e.targetHours) {
+        daysWithHit.add(dateKey(end));
+        hitCount++;
+      }
 
-      // Days with fast: every calendar day the fast overlaps (handles overnight fasts)
+      // Days with fast: every calendar day the fast overlaps (handles overnight fasts).
+      // Capped defensively in case a corrupted/imported entry has an absurd duration.
       const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      while (cursor <= endDay) {
+      let guard = 0;
+      while (cursor <= endDay && guard < 400) {
         daysCovered.add(dateKey(cursor));
         cursor.setDate(cursor.getDate() + 1);
+        guard++;
       }
     });
 
@@ -606,6 +787,7 @@
     el.statLongest.textContent = formatDaysHours(longestH);
     el.statTotalTime.textContent = formatDaysHours(totalH);
     el.statDays.textContent = daysCovered.size;
+    el.statHitRate.textContent = `${Math.round((hitCount / items.length) * 100)}%`;
 
     let streak = 0;
     let cursor = new Date();
@@ -622,13 +804,13 @@
   }
 
   // ---------- Chart ----------
-  const periodToggle = document.querySelector('.period-toggle');
+  const periodToggle = document.querySelector('.chart-card .period-toggle');
   if (periodToggle) {
     periodToggle.addEventListener('click', (e) => {
       const btn = e.target.closest('.period-btn');
       if (!btn) return;
       currentChartPeriod = btn.dataset.period;
-      document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b === btn));
+      periodToggle.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b === btn));
       renderChart();
     });
   }
@@ -763,22 +945,27 @@
         const data = JSON.parse(reader.result);
         importData(data);
       } catch (e) {
-        alert('Could not read that file — make sure it\'s a Fast Track export.');
+        showAlert('Import failed', "Could not read that file — make sure it's a Fast Track export.");
       }
     };
     reader.readAsText(file);
   });
 
-  function importData(data) {
+  async function importData(data) {
     if (!data || !Array.isArray(data.history)) {
-      alert('That file doesn\'t look like a valid Fast Track export.');
+      await showAlert('Import failed', "That file doesn't look like a valid Fast Track export.");
       return;
     }
 
     const existingKeys = new Set(state.history.map(e => `${e.startISO}|${e.endISO}`));
     let added = 0;
+    let skipped = 0;
     data.history.forEach((entry) => {
-      if (!entry || !entry.startISO || !entry.endISO || !entry.targetHours) return;
+      if (!entry || !entry.startISO || !entry.endISO || !entry.targetHours) { skipped++; return; }
+      const start = new Date(entry.startISO);
+      const end = new Date(entry.endISO);
+      const durH = (end - start) / 3600000;
+      if (!(durH > 0) || durH > 720 || isNaN(start.getTime()) || isNaN(end.getTime())) { skipped++; return; }
       const key = `${entry.startISO}|${entry.endISO}`;
       if (!existingKeys.has(key)) {
         existingKeys.add(key);
@@ -794,7 +981,11 @@
 
     let importedCurrent = false;
     if (!state.current && data.current && data.current.startISO && data.current.targetHours) {
-      const proceed = confirm('This file also has an in-progress fast. Import it as your active fast?');
+      const proceed = await showDialog({
+        title: 'Resume active fast?',
+        message: 'This file also has an in-progress fast. Import it as your active fast?',
+        okText: 'Resume',
+      });
       if (proceed) {
         state.current = {
           startISO: data.current.startISO,
@@ -810,11 +1001,18 @@
     render();
     renderHistory();
     renderChart();
-    alert(`Imported ${added} fast${added === 1 ? '' : 's'}${importedCurrent ? ' and resumed your active fast' : ''}.`);
+    const skippedMsg = skipped > 0 ? ` (${skipped} skipped — missing or implausible data)` : '';
+    await showAlert('Import complete', `Imported ${added} fast${added === 1 ? '' : 's'}${importedCurrent ? ' and resumed your active fast' : ''}.${skippedMsg}`);
   }
 
-  el.resetDataBtn.addEventListener('click', () => {
-    if (!confirm('This clears all logged fasts and any active fast. This can\'t be undone. Continue?')) return;
+  el.resetDataBtn.addEventListener('click', async () => {
+    const ok = await showDialog({
+      title: 'Clear all data?',
+      message: "This clears all logged fasts and any active fast. This can't be undone.",
+      okText: 'Clear',
+      danger: true,
+    });
+    if (!ok) return;
     state.history = [];
     state.current = null;
     save();
@@ -825,6 +1023,7 @@
 
   // ---------- Init ----------
   setPresetUI(selectedTargetHours);
+  applyTheme();
   updateNotifUI();
   syncSettingsUI();
   checkNotificationCatchUp();
