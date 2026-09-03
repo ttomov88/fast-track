@@ -15,14 +15,19 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        return Object.assign({
+        const merged = Object.assign({
           current: null,
           history: [],
           lastTargetHours: 16,
           notifyDismissed: false,
           notificationsEnabled: true,
-          preReminderMinutes: 0,
+          remindAtGoal: true,
+          preReminderEnabled: false,
+          preReminderMinutes: 30,
         }, parsed);
+        // migrate old data where 0 meant "off" via the select alone
+        if (![15, 30, 60].includes(merged.preReminderMinutes)) merged.preReminderMinutes = 30;
+        return merged;
       }
     } catch (e) {}
     return {
@@ -31,7 +36,9 @@
       lastTargetHours: 16,
       notifyDismissed: false,
       notificationsEnabled: true,
-      preReminderMinutes: 0,
+      remindAtGoal: true,
+      preReminderEnabled: false,
+      preReminderMinutes: 30,
     };
   }
 
@@ -46,7 +53,7 @@
     settingsView: document.getElementById('settingsView'),
     historyBtn: document.getElementById('historyBtn'),
     backBtn: document.getElementById('backBtn'),
-    settingsBtn: document.getElementById('settingsBtn'),
+    settingsBtn: document.getElementById('settingsBtnTop'),
     settingsBackBtn: document.getElementById('settingsBackBtn'),
     ringProgress: document.getElementById('ringProgress'),
     statusLabel: document.getElementById('statusLabel'),
@@ -83,6 +90,9 @@
     defaultCustomTargetInput: document.getElementById('defaultCustomTargetInput'),
     settingsNotifToggle: document.getElementById('settingsNotifToggle'),
     notifStatusText: document.getElementById('notifStatusText'),
+    goalReminderToggle: document.getElementById('goalReminderToggle'),
+    preReminderToggle: document.getElementById('preReminderToggle'),
+    preReminderMinutesWrap: document.getElementById('preReminderMinutesWrap'),
     preReminderSelect: document.getElementById('preReminderSelect'),
     settingsExportBtn: document.getElementById('settingsExportBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
@@ -111,7 +121,7 @@
     showView('settingsView');
     syncSettingsUI();
   });
-  el.settingsBackBtn.addEventListener('click', () => showView('historyView'));
+  el.settingsBackBtn.addEventListener('click', () => showView('timerView'));
 
   // ---------- Preset picker (shared between timer view & settings) ----------
   function setPresetUI(hours) {
@@ -239,7 +249,14 @@
     } else {
       el.notifStatusText.textContent = 'Not enabled';
     }
-    el.preReminderSelect.value = String(state.preReminderMinutes || 0);
+
+    el.goalReminderToggle.classList.toggle('on', !!state.remindAtGoal);
+    el.goalReminderToggle.setAttribute('aria-checked', String(!!state.remindAtGoal));
+
+    el.preReminderToggle.classList.toggle('on', !!state.preReminderEnabled);
+    el.preReminderToggle.setAttribute('aria-checked', String(!!state.preReminderEnabled));
+    el.preReminderMinutesWrap.classList.toggle('hidden', !state.preReminderEnabled);
+    el.preReminderSelect.value = String(state.preReminderMinutes || 30);
   }
 
   function requestNotifPermission(cb) {
@@ -306,8 +323,20 @@
     syncSettingsUI();
   });
 
+  el.goalReminderToggle.addEventListener('click', () => {
+    state.remindAtGoal = !state.remindAtGoal;
+    save();
+    syncSettingsUI();
+  });
+
+  el.preReminderToggle.addEventListener('click', () => {
+    state.preReminderEnabled = !state.preReminderEnabled;
+    save();
+    syncSettingsUI();
+  });
+
   el.preReminderSelect.addEventListener('change', () => {
-    state.preReminderMinutes = Number(el.preReminderSelect.value) || 0;
+    state.preReminderMinutes = Number(el.preReminderSelect.value) || 30;
     save();
   });
 
@@ -320,11 +349,13 @@
       tag: 'fasttrack-' + title.replace(/\s+/g, '-').toLowerCase(),
     };
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((reg) => {
+      const swReady = navigator.serviceWorker.ready;
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 1500));
+      Promise.race([swReady, timeout]).then((reg) => {
         if (reg && reg.showNotification) {
           reg.showNotification(title, opts);
         } else {
-          new Notification(title, opts);
+          try { new Notification(title, opts); } catch (e) {}
         }
       }).catch(() => {
         try { new Notification(title, opts); } catch (e) {}
@@ -344,11 +375,11 @@
     if (!state.current.goalNotified && elapsedMs >= targetMs) {
       state.current.goalNotified = true;
       save();
-      notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+      if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
       return;
     }
     const reminderMs = (state.preReminderMinutes || 0) * 60000;
-    if (reminderMs > 0 && !state.current.preReminderNotified && elapsedMs >= (targetMs - reminderMs) && elapsedMs < targetMs) {
+    if (state.preReminderEnabled && reminderMs > 0 && !state.current.preReminderNotified && elapsedMs >= (targetMs - reminderMs) && elapsedMs < targetMs) {
       state.current.preReminderNotified = true;
       save();
       notify('Almost there', `${state.preReminderMinutes} min left on your ${state.current.targetHours}h fast.`);
@@ -454,7 +485,7 @@
       if (!state.current.goalNotified) {
         state.current.goalNotified = true;
         save();
-        notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+        if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
       }
     } else {
       el.ringProgress.style.stroke = 'var(--accent)';
@@ -462,7 +493,7 @@
       el.subLabel.textContent = `${formatElapsed(remainMs)} to go · goal ${state.current.targetHours}h`;
 
       const reminderMs = (state.preReminderMinutes || 0) * 60000;
-      if (reminderMs > 0 && !state.current.preReminderNotified && remainMs <= reminderMs) {
+      if (state.preReminderEnabled && reminderMs > 0 && !state.current.preReminderNotified && remainMs <= reminderMs) {
         state.current.preReminderNotified = true;
         save();
         notify('Almost there', `${state.preReminderMinutes} min left on your ${state.current.targetHours}h fast.`);
