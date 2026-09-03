@@ -75,7 +75,6 @@
     statTotalTime: document.getElementById('statTotalTime'),
     statDays: document.getElementById('statDays'),
     statHitRate: document.getElementById('statHitRate'),
-    notifyBtn: document.getElementById('notifyBtn'),
     notifyBanner: document.getElementById('notifyBanner'),
     notifyEnableBtn: document.getElementById('notifyEnableBtn'),
     notifyDismissBtn: document.getElementById('notifyDismissBtn'),
@@ -310,12 +309,8 @@
   }
 
   function updateNotifUI() {
-    if (!notifSupported) {
-      el.notifyBtn.style.display = 'none';
-      return;
-    }
+    if (!notifSupported) return;
     const perm = notifPermission();
-    el.notifyBtn.classList.toggle('active-state', notificationsActive());
     const shouldShowBanner = perm === 'default' && !state.notifyDismissed;
     el.notifyBanner.classList.toggle('hidden', !shouldShowBanner);
   }
@@ -354,23 +349,6 @@
       if (cb) cb(perm);
     });
   }
-
-  el.notifyBtn.addEventListener('click', async () => {
-    const perm = notifPermission();
-    if (perm === 'default') {
-      requestNotifPermission((perm2) => {
-        if (perm2 === 'granted') {
-          state.notificationsEnabled = true;
-          save();
-          updateNotifUI();
-        }
-      });
-    } else if (perm === 'denied') {
-      await showAlert('Notifications blocked', 'Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings to get alerts.');
-    } else {
-      await showAlert('Notifications', notificationsActive() ? 'Notifications are enabled.' : 'Notifications are turned off. Enable them in Settings.');
-    }
-  });
 
   el.notifyEnableBtn.addEventListener('click', () => {
     requestNotifPermission((perm) => {

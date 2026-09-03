@@ -68,7 +68,6 @@ html,body{
   box-shadow:var(--shadow);
 }
 .icon-btn:active{ opacity:0.7; }
-.icon-btn.active-state{ color:var(--accent); }
 
 .topbar-actions{ display:flex; gap:8px; }
 
