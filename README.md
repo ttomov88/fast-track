@@ -54,5 +54,28 @@ The History screen (clock icon) shows:
 ## Settings
 
 - **Default fasting goal** — the target used whenever you start a new fast (kept in sync with the picker on the main screen).
-- **Notifications** — a toggle mirroring your browser permission, plus an optional **remind me before goal** heads-up (15/30/60 min early).
+- **Notifications** — a toggle mirroring your browser permission, plus an optional **remind me before goal** heads-up, a **remind me exactly at goal**, and a daily **remind me to start a fast** at a time you set.
 - **Data** — export, import, and clear-all-data.
+
+## Auto-backup to Downloads
+
+This is the fix for the local-storage-can-get-wiped problem: Chrome's "Clear browsing data" erases everything an installed PWA stores locally (localStorage), with no special protection for installed apps. A file that's already been downloaded to your phone's Downloads folder, though, lives in separate OS-level storage — "Clear browsing data" doesn't touch it. That's the safety net this feature builds.
+
+**How it works:** in Settings, flip on **Auto-backup to Downloads**. From then on, the app downloads a dated JSON snapshot (`fast-track-backup-2026-09-04.json`, etc.) to your phone's normal Downloads folder whenever your fasting data has actually changed — checked when you open the app, when you return to it, and right after any edit — but never more than once every 4 hours, even if you make several changes in one sitting. There's also a **Back up now** button for an on-demand copy anytime.
+
+### Why it's not literally "every time the app opens"
+
+A web app on Android can't remember a specific folder you pick and silently overwrite a file in it — that part of the File System Access API (which desktop Chrome supports) isn't available on Android Chrome. The only thing available is triggering a normal one-off download each time, which always lands in the general Downloads folder as a brand new file, never an overwrite. Downloading on every single app launch would:
+- Pile up near-identical files fast (dozens or hundreds over time), and
+- Likely get silently throttled by Chrome's anti-abuse protection against repeated automatic downloads.
+
+Gating on "did the data actually change" plus a minimum spacing between backups avoids both problems while still keeping a fresh copy in Downloads.
+
+### Making it actually redundant
+
+A file in Downloads survives "Clear browsing data," but not a full factory reset or losing the phone. If you want real off-device redundancy, point your phone's Google Drive app (or Synology Drive, or any file-sync app) at your Downloads folder to auto-upload from there — that's a phone-level setting, not something this web app can configure for you, but it's the natural next step once files are landing in Downloads reliably.
+
+### Known limitations
+
+- Files aren't cleaned up automatically — they'll accumulate in Downloads over months. Delete old ones periodically, or point a sync app at the folder as above.
+- If Chrome is set to "Ask where to save each file" (a setting some people enable), each auto-backup will show a save dialog rather than silently downloading — worth checking that setting is off for a smooth experience.

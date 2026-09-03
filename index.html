@@ -258,6 +258,21 @@
       </div>
 
       <div class="settings-section">
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Auto-backup to Downloads</div>
+            <div class="settings-sublabel" id="autoBackupStatusText">No backup yet</div>
+          </div>
+          <button id="autoBackupToggle" class="toggle-switch" role="switch" aria-checked="false">
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+        <div class="data-actions" style="margin-top:12px;">
+          <button id="backupNowBtn" class="chip-btn">Back up now</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-label">Data</div>
         <div class="data-actions">
           <button id="settingsExportBtn" class="chip-btn">
