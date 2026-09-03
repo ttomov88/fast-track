@@ -54,6 +54,7 @@ html,body{
   font-weight:700;
   margin:0;
   letter-spacing:0.3px;
+  cursor:pointer;
 }
 
 .icon-btn{

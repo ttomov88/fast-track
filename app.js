@@ -49,6 +49,7 @@
     historyView: document.getElementById('historyView'),
     settingsView: document.getElementById('settingsView'),
     historyBtn: document.getElementById('historyBtn'),
+    appTitle: document.getElementById('appTitle'),
     backBtn: document.getElementById('backBtn'),
     settingsBtn: document.getElementById('settingsBtnTop'),
     settingsBackBtn: document.getElementById('settingsBackBtn'),
@@ -200,6 +201,7 @@
     renderChart();
   });
   el.backBtn.addEventListener('click', () => showView('timerView'));
+  el.appTitle.addEventListener('click', () => showView('timerView'));
   el.settingsBtn.addEventListener('click', () => {
     showView('settingsView');
     syncSettingsUI();
