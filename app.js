@@ -20,6 +20,9 @@
       remindAtGoal: true,
       preReminderEnabled: false,
       preReminderMinutes: 30,
+      startReminderEnabled: false,
+      startReminderTime: '20:00',
+      startReminderLastFiredDate: null,
       theme: 'light',
     };
   }
@@ -33,6 +36,7 @@
         // migrate old data where 0 meant "off" via the select alone
         if (![15, 30, 60].includes(merged.preReminderMinutes)) merged.preReminderMinutes = 30;
         if (!['light', 'dark', 'system'].includes(merged.theme)) merged.theme = 'light';
+        if (!/^\d{2}:\d{2}$/.test(merged.startReminderTime)) merged.startReminderTime = '20:00';
         return merged;
       }
     } catch (e) {}
@@ -57,6 +61,7 @@
     statusLabel: document.getElementById('statusLabel'),
     elapsedTime: document.getElementById('elapsedTime'),
     subLabel: document.getElementById('subLabel'),
+    finishTime: document.getElementById('finishTime'),
     targetPicker: document.getElementById('targetPicker'),
     customTargetWrap: document.getElementById('customTargetWrap'),
     customTargetInput: document.getElementById('customTargetInput'),
@@ -84,15 +89,16 @@
     addFastBtn: document.getElementById('addFastBtn'),
     // settings
     themeToggle: document.getElementById('themeToggle'),
-    defaultTargetPicker: document.getElementById('defaultTargetPicker'),
-    defaultCustomTargetWrap: document.getElementById('defaultCustomTargetWrap'),
-    defaultCustomTargetInput: document.getElementById('defaultCustomTargetInput'),
     settingsNotifToggle: document.getElementById('settingsNotifToggle'),
     notifStatusText: document.getElementById('notifStatusText'),
     goalReminderToggle: document.getElementById('goalReminderToggle'),
     preReminderToggle: document.getElementById('preReminderToggle'),
     preReminderMinutesWrap: document.getElementById('preReminderMinutesWrap'),
     preReminderSelect: document.getElementById('preReminderSelect'),
+    startReminderToggle: document.getElementById('startReminderToggle'),
+    startReminderTimeWrap: document.getElementById('startReminderTimeWrap'),
+    startReminderHourSelect: document.getElementById('startReminderHourSelect'),
+    startReminderMinuteSelect: document.getElementById('startReminderMinuteSelect'),
     settingsExportBtn: document.getElementById('settingsExportBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
     resetDataBtn: document.getElementById('resetDataBtn'),
@@ -207,7 +213,7 @@
   });
   el.settingsBackBtn.addEventListener('click', () => showView('timerView'));
 
-  // ---------- Preset picker (shared between timer view & settings) ----------
+  // ---------- Preset picker (main timer view) ----------
   function setPresetUI(hours) {
     const isCustom = !PRESET_HOURS.includes(hours);
     document.querySelectorAll('.preset').forEach(btn => {
@@ -218,10 +224,9 @@
         btn.classList.toggle('active', Number(val) === hours && !isCustom);
       }
     });
-    [el.customTargetWrap, el.defaultCustomTargetWrap].forEach(wrap => wrap.classList.toggle('hidden', !isCustom));
+    el.customTargetWrap.classList.toggle('hidden', !isCustom);
     if (isCustom) {
       el.customTargetInput.value = hours;
-      el.defaultCustomTargetInput.value = hours;
     }
   }
 
@@ -243,23 +248,11 @@
     }
   });
 
-  el.defaultTargetPicker.addEventListener('click', (e) => {
-    const btn = e.target.closest('.preset');
-    if (!btn) return;
-    if (btn.dataset.hours === 'custom') {
-      chooseTarget(Number(el.defaultCustomTargetInput.value) || 16);
-      el.defaultCustomTargetWrap.classList.remove('hidden');
-    } else {
-      chooseTarget(Number(btn.dataset.hours));
-    }
-  });
-
   function syncCustomValue(v) {
     v = Number(v);
     if (v > 0) chooseTarget(v);
   }
   el.customTargetInput.addEventListener('input', () => syncCustomValue(el.customTargetInput.value));
-  el.defaultCustomTargetInput.addEventListener('input', () => syncCustomValue(el.defaultCustomTargetInput.value));
 
   // ---------- Main action ----------
   el.mainActionBtn.addEventListener('click', () => {
@@ -338,6 +331,13 @@
     el.preReminderMinutesWrap.classList.toggle('hidden', !state.preReminderEnabled);
     el.preReminderSelect.value = String(state.preReminderMinutes || 30);
 
+    el.startReminderToggle.classList.toggle('on', !!state.startReminderEnabled);
+    el.startReminderToggle.setAttribute('aria-checked', String(!!state.startReminderEnabled));
+    el.startReminderTimeWrap.classList.toggle('hidden', !state.startReminderEnabled);
+    const [rh, rm] = (state.startReminderTime || '20:00').split(':');
+    el.startReminderHourSelect.value = rh;
+    el.startReminderMinuteSelect.value = rm;
+
     applyTheme();
   }
 
@@ -405,6 +405,22 @@
     save();
   });
 
+  el.startReminderToggle.addEventListener('click', () => {
+    state.startReminderEnabled = !state.startReminderEnabled;
+    if (state.startReminderEnabled) state.startReminderLastFiredDate = null; // allow it to fire today if past the time
+    save();
+    syncSettingsUI();
+    checkStartReminder();
+  });
+
+  function saveStartReminderTime() {
+    state.startReminderTime = `${el.startReminderHourSelect.value}:${el.startReminderMinuteSelect.value}`;
+    state.startReminderLastFiredDate = null; // re-arm for today with the new time
+    save();
+  }
+  el.startReminderHourSelect.addEventListener('change', saveStartReminderTime);
+  el.startReminderMinuteSelect.addEventListener('change', saveStartReminderTime);
+
   function notify(title, body) {
     if (!notificationsActive()) return;
     const opts = {
@@ -452,8 +468,29 @@
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') checkNotificationCatchUp();
+    if (document.visibilityState === 'visible') {
+      checkNotificationCatchUp();
+      checkStartReminder();
+    }
   });
+
+  // Daily reminder to start a fast, independent of any active fast.
+  function checkStartReminder() {
+    if (!state.startReminderEnabled || state.current) return;
+    const now = new Date();
+    const todayKey = dateKey(now);
+    if (state.startReminderLastFiredDate === todayKey) return;
+    const [h, m] = (state.startReminderTime || '20:00').split(':').map(Number);
+    const targetMinutes = h * 60 + m;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    if (nowMinutes >= targetMinutes) {
+      state.startReminderLastFiredDate = todayKey;
+      save();
+      notify('Time to start your fast', `You set a daily reminder for ${state.startReminderTime}.`);
+    }
+  }
+
+  setInterval(checkStartReminder, 60000);
 
   // ---------- Edit start time (active fast) ----------
   el.editStartBtn.addEventListener('click', () => {
@@ -577,6 +614,13 @@
       el.statusLabel.textContent = 'FASTING';
       document.querySelectorAll('#targetPicker .preset').forEach(b => b.style.opacity = '0.4');
       el.customTargetInput.disabled = true;
+
+      const finishDate = new Date(new Date(state.current.startISO).getTime() + state.current.targetHours * 3600000);
+      const finishStr = finishDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+      const finishWeekday = finishDate.toLocaleDateString(undefined, { weekday: 'short' });
+      el.finishTime.textContent = `${finishStr} ${finishWeekday}`;
+      el.finishTime.classList.remove('hidden');
+
       startTick();
     } else {
       el.mainActionBtn.textContent = 'Start Fast';
@@ -584,7 +628,10 @@
       el.editStartBtn.classList.add('hidden');
       el.statusLabel.textContent = 'NOT FASTING';
       el.subLabel.textContent = 'Tap start to begin';
+      el.subLabel.style.color = '';
       el.elapsedTime.textContent = '00:00:00';
+      el.finishTime.classList.add('hidden');
+      el.finishTime.textContent = '';
       el.ringProgress.style.stroke = 'var(--accent)';
       el.ringProgress.style.strokeDashoffset = RING_CIRC;
       document.querySelectorAll('#targetPicker .preset').forEach(b => b.style.opacity = '1');
@@ -619,6 +666,7 @@
       el.ringProgress.style.stroke = 'var(--accent2)';
       const overMs = elapsedMs - targetMs;
       el.subLabel.textContent = `Goal reached · +${formatElapsed(overMs)} over`;
+      el.subLabel.style.color = '';
       if (!state.current.goalNotified) {
         state.current.goalNotified = true;
         save();
@@ -627,7 +675,8 @@
     } else {
       el.ringProgress.style.stroke = 'var(--accent)';
       const remainMs = targetMs - elapsedMs;
-      el.subLabel.textContent = `${formatElapsed(remainMs)} to go · goal ${state.current.targetHours}h`;
+      el.subLabel.textContent = formatElapsed(remainMs);
+      el.subLabel.style.color = 'var(--accent)';
 
       const reminderMs = (state.preReminderMinutes || 0) * 60000;
       if (state.preReminderEnabled && reminderMs > 0 && !state.current.preReminderNotified && remainMs <= reminderMs) {
@@ -1007,6 +1056,7 @@
   updateNotifUI();
   syncSettingsUI();
   checkNotificationCatchUp();
+  checkStartReminder();
   render();
 
   // ---------- Service worker ----------
