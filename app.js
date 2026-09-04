@@ -314,6 +314,13 @@
     const perm = notifPermission();
     const shouldShowBanner = perm === 'default' && !state.notifyDismissed;
     el.notifyBanner.classList.toggle('hidden', !shouldShowBanner);
+    if (shouldShowBanner) {
+      // Showing it once counts as having asked — never nag on every subsequent open,
+      // even if the person ignores it or backs out of the system permission prompt
+      // without an explicit Allow/Deny. They can still enable later from Settings.
+      state.notifyDismissed = true;
+      save();
+    }
   }
 
   function syncSettingsUI() {
