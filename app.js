@@ -15,7 +15,6 @@
       current: null,
       history: [],
       lastTargetHours: 16,
-      notifyDismissed: false,
       notificationsEnabled: true,
       remindAtGoal: true,
       preReminderEnabled: false,
@@ -83,9 +82,6 @@
     statTotalTime: document.getElementById('statTotalTime'),
     statDays: document.getElementById('statDays'),
     statHitRate: document.getElementById('statHitRate'),
-    notifyBanner: document.getElementById('notifyBanner'),
-    notifyEnableBtn: document.getElementById('notifyEnableBtn'),
-    notifyDismissBtn: document.getElementById('notifyDismissBtn'),
     importFile: document.getElementById('importFile'),
     chartBars: document.getElementById('chartBars'),
     chartLabels: document.getElementById('chartLabels'),
@@ -309,13 +305,6 @@
     return notifSupported && Notification.permission === 'granted' && state.notificationsEnabled !== false;
   }
 
-  function updateNotifUI() {
-    if (!notifSupported) return;
-    const perm = notifPermission();
-    const shouldShowBanner = perm === 'default' && !state.notifyDismissed;
-    el.notifyBanner.classList.toggle('hidden', !shouldShowBanner);
-  }
-
   function syncSettingsUI() {
     const perm = notifPermission();
     const active = notificationsActive();
@@ -352,27 +341,10 @@
   function requestNotifPermission(cb) {
     if (!notifSupported) return;
     Notification.requestPermission().then((perm) => {
-      updateNotifUI();
       syncSettingsUI();
       if (cb) cb(perm);
     });
   }
-
-  el.notifyEnableBtn.addEventListener('click', () => {
-    requestNotifPermission((perm) => {
-      if (perm === 'granted') {
-        state.notificationsEnabled = true;
-        save();
-        updateNotifUI();
-      }
-    });
-  });
-
-  el.notifyDismissBtn.addEventListener('click', () => {
-    state.notifyDismissed = true;
-    save();
-    updateNotifUI();
-  });
 
   el.settingsNotifToggle.addEventListener('click', async () => {
     const perm = notifPermission();
@@ -384,7 +356,6 @@
       requestNotifPermission((perm2) => {
         state.notificationsEnabled = (perm2 === 'granted');
         save();
-        updateNotifUI();
         syncSettingsUI();
       });
       return;
@@ -392,7 +363,6 @@
     // already granted — just toggle app-level preference
     state.notificationsEnabled = !notificationsActive();
     save();
-    updateNotifUI();
     syncSettingsUI();
   });
 
@@ -1144,7 +1114,6 @@
   // ---------- Init ----------
   setPresetUI(selectedTargetHours);
   applyTheme();
-  updateNotifUI();
   syncSettingsUI();
   updateAutoBackupUI();
   checkNotificationCatchUp();
