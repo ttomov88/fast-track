@@ -73,6 +73,10 @@
     editStartInput: document.getElementById('editStartInput'),
     editCancelBtn: document.getElementById('editCancelBtn'),
     editSaveBtn: document.getElementById('editSaveBtn'),
+    endFastModal: document.getElementById('endFastModal'),
+    endFastInput: document.getElementById('endFastInput'),
+    endFastCancelBtn: document.getElementById('endFastCancelBtn'),
+    endFastConfirmBtn: document.getElementById('endFastConfirmBtn'),
     historyList: document.getElementById('historyList'),
     historyEmpty: document.getElementById('historyEmpty'),
     statStreak: document.getElementById('statStreak'),
@@ -259,10 +263,47 @@
   // ---------- Main action ----------
   el.mainActionBtn.addEventListener('click', () => {
     if (state.current) {
-      endFast();
+      openEndFastModal();
     } else {
       startFast();
     }
+  });
+
+  function openEndFastModal() {
+    el.endFastInput.value = toLocalInputValue(new Date());
+    el.endFastModal.classList.remove('hidden');
+  }
+
+  el.endFastCancelBtn.addEventListener('click', () => {
+    el.endFastModal.classList.add('hidden');
+  });
+
+  el.endFastConfirmBtn.addEventListener('click', async () => {
+    const val = el.endFastInput.value;
+    if (!val || !state.current) {
+      el.endFastModal.classList.add('hidden');
+      return;
+    }
+    const endDate = new Date(val);
+    const startDate = new Date(state.current.startISO);
+    if (isNaN(endDate.getTime())) {
+      await showAlert('Invalid time', 'Please enter a valid date and time.');
+      return;
+    }
+    if (endDate <= startDate) {
+      await showAlert('Invalid time', 'Finish time must be after the start time.');
+      return;
+    }
+    if (endDate.getTime() > Date.now()) {
+      await showAlert('Invalid time', "Finish time can't be in the future.");
+      return;
+    }
+    if ((endDate - startDate) / 3600000 > 720) {
+      await showAlert('Invalid time', "That's more than 30 days long — double check the date.");
+      return;
+    }
+    el.endFastModal.classList.add('hidden');
+    endFast(endDate);
   });
 
   function startFast() {
@@ -278,11 +319,11 @@
     maybeAutoBackup();
   }
 
-  function endFast() {
+  function endFast(endDate) {
     if (!state.current) return;
     const entry = {
       startISO: state.current.startISO,
-      endISO: new Date().toISOString(),
+      endISO: (endDate || new Date()).toISOString(),
       targetHours: state.current.targetHours,
     };
     state.history.unshift(entry);
