@@ -724,7 +724,7 @@
       const li = document.createElement('li');
       li.className = 'history-item';
 
-      const dateStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const dateStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
       li.innerHTML = `
