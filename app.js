@@ -89,6 +89,9 @@
     importFile: document.getElementById('importFile'),
     chartBars: document.getElementById('chartBars'),
     chartLabels: document.getElementById('chartLabels'),
+    chartMonthLabel: document.getElementById('chartMonthLabel'),
+    chartPrevMonthBtn: document.getElementById('chartPrevMonthBtn'),
+    chartNextMonthBtn: document.getElementById('chartNextMonthBtn'),
     addFastBtn: document.getElementById('addFastBtn'),
     // settings
     themeToggle: document.getElementById('themeToggle'),
@@ -128,7 +131,7 @@
 
   let tickInterval = null;
   let selectedTargetHours = state.lastTargetHours || 16;
-  let currentChartPeriod = 'week';
+  let currentChartMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   let editingFastIndex = null; // null = adding a new fast; number = editing state.history[idx]
 
   // ---------- Generic styled dialog (replaces confirm()/alert()) ----------
@@ -733,7 +736,7 @@
           <span class="hi-range">${timeStr}</span>
         </div>
         <div class="hi-right">
-          <span class="hi-badge ${hit ? 'hit' : 'miss'}">${entry.targetHours}h goal</span>
+          <span class="hi-badge ${hit ? 'hit' : 'miss'}">${entry.targetHours}h</span>
           <span class="hi-duration">${formatHoursShort(durationH)}</span>
           <button class="hi-edit" data-idx="${idx}" aria-label="Edit">
             <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
@@ -863,28 +866,21 @@
   }
 
   // ---------- Chart ----------
-  const periodToggle = document.querySelector('.chart-card .period-toggle');
-  if (periodToggle) {
-    periodToggle.addEventListener('click', (e) => {
-      const btn = e.target.closest('.period-btn');
-      if (!btn) return;
-      currentChartPeriod = btn.dataset.period;
-      periodToggle.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b === btn));
-      renderChart();
-    });
-  }
-
   function durationHoursOf(entry) {
     return (new Date(entry.endISO) - new Date(entry.startISO)) / 3600000;
   }
 
-  function buildWeekOrMonthBuckets(days) {
+  function isSameMonth(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  }
+
+  function buildMonthBuckets(monthDate) {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     const buckets = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
       buckets.push({ key: dateKey(d), date: d, value: 0 });
     }
     const map = new Map(buckets.map(b => [b.key, b]));
@@ -896,44 +892,26 @@
     return buckets;
   }
 
-  function buildYearBuckets() {
-    const buckets = [];
-    const today = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      buckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, date: d, total: 0, count: 0, value: 0 });
-    }
-    const map = new Map(buckets.map(b => [b.key, b]));
-    state.history.forEach(entry => {
-      const end = new Date(entry.endISO);
-      const k = `${end.getFullYear()}-${end.getMonth()}`;
-      if (map.has(k)) {
-        const b = map.get(k);
-        b.total += durationHoursOf(entry);
-        b.count += 1;
-      }
-    });
-    buckets.forEach(b => { b.value = b.count > 0 ? b.total / b.count : 0; });
-    return buckets;
-  }
+  el.chartPrevMonthBtn.addEventListener('click', () => {
+    currentChartMonth = new Date(currentChartMonth.getFullYear(), currentChartMonth.getMonth() - 1, 1);
+    renderChart();
+  });
+
+  el.chartNextMonthBtn.addEventListener('click', () => {
+    const next = new Date(currentChartMonth.getFullYear(), currentChartMonth.getMonth() + 1, 1);
+    if (next > new Date()) return; // can't navigate into the future
+    currentChartMonth = next;
+    renderChart();
+  });
 
   function renderChart() {
     if (!el.chartBars) return;
-    let buckets, labelFn, sparseLabels = false;
-
-    if (currentChartPeriod === 'week') {
-      buckets = buildWeekOrMonthBuckets(7);
-      labelFn = (b) => b.date.toLocaleDateString(undefined, { weekday: 'short' })[0];
-    } else if (currentChartPeriod === 'month') {
-      buckets = buildWeekOrMonthBuckets(30);
-      labelFn = (b) => String(b.date.getDate());
-      sparseLabels = true;
-    } else {
-      buckets = buildYearBuckets();
-      labelFn = (b) => b.date.toLocaleDateString(undefined, { month: 'short' });
-    }
-
+    const buckets = buildMonthBuckets(currentChartMonth);
     const goalHours = Math.min(24, state.lastTargetHours || 16);
+
+    el.chartMonthLabel.textContent = currentChartMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const now = new Date();
+    el.chartNextMonthBtn.disabled = isSameMonth(currentChartMonth, now);
 
     el.chartBars.innerHTML = '';
     el.chartLabels.innerHTML = '';
@@ -944,6 +922,7 @@
     goalLine.style.top = `${(1 - goalHours / 24) * 100}%`;
     el.chartBars.appendChild(goalLine);
 
+    const showEvery = 5;
     buckets.forEach((b, idx) => {
       const col = document.createElement('div');
       col.className = 'chart-bar-col';
@@ -955,13 +934,9 @@
       el.chartBars.appendChild(col);
 
       const label = document.createElement('span');
-      if (sparseLabels) {
-        const showEvery = 5;
-        const fromEnd = buckets.length - 1 - idx;
-        label.textContent = (idx === 0 || idx === buckets.length - 1 || fromEnd % showEvery === 0) ? labelFn(b) : '';
-      } else {
-        label.textContent = labelFn(b);
-      }
+      const fromEnd = buckets.length - 1 - idx;
+      const dayNum = b.date.getDate();
+      label.textContent = (idx === 0 || idx === buckets.length - 1 || fromEnd % showEvery === 0) ? String(dayNum) : '';
       el.chartLabels.appendChild(label);
     });
   }
