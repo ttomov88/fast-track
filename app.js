@@ -724,7 +724,7 @@
       const li = document.createElement('li');
       li.className = 'history-item';
 
-      const dateStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const dateStr = formatShortDate(start);
       const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
       li.innerHTML = `
@@ -771,6 +771,14 @@
     });
 
     renderStats();
+  }
+
+  // Compact, consistent day-month-year format regardless of device locale, e.g. "8 Aug 25".
+  function formatShortDate(date) {
+    const day = date.getDate();
+    const month = date.toLocaleDateString(undefined, { month: 'short' });
+    const year = String(date.getFullYear()).slice(-2);
+    return `${day} ${month} ${year}`;
   }
 
   function formatHoursShort(h) {
