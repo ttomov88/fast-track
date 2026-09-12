@@ -866,10 +866,6 @@
   }
 
   // ---------- Chart ----------
-  function durationHoursOf(entry) {
-    return (new Date(entry.endISO) - new Date(entry.startISO)) / 3600000;
-  }
-
   function isSameMonth(a, b) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
   }
@@ -884,10 +880,27 @@
       buckets.push({ key: dateKey(d), date: d, value: 0 });
     }
     const map = new Map(buckets.map(b => [b.key, b]));
+
+    // Split each fast's hours across every calendar day it actually spans, proportional to how
+    // much of it fell on each day — rather than dumping the whole duration onto the end date.
+    // This matters for every overnight fast, not just ones over 24h: a fast that runs 8pm-noon
+    // should show hours on both the day it started and the day it ended, not all on one or the
+    // other.
     state.history.forEach(entry => {
+      const start = new Date(entry.startISO);
       const end = new Date(entry.endISO);
-      const k = dateKey(end);
-      if (map.has(k)) map.get(k).value += durationHoursOf(entry);
+      let cursor = new Date(start);
+      let guard = 0;
+      while (cursor < end && guard < 40) {
+        const dayStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+        const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+        const segmentEnd = end < dayEnd ? end : dayEnd;
+        const hoursThisDay = (segmentEnd - cursor) / 3600000;
+        const key = dateKey(dayStart);
+        if (map.has(key)) map.get(key).value += hoursThisDay;
+        cursor = segmentEnd;
+        guard++;
+      }
     });
     return buckets;
   }
