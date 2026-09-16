@@ -79,7 +79,6 @@
     endFastConfirmBtn: document.getElementById('endFastConfirmBtn'),
     historyList: document.getElementById('historyList'),
     historyEmpty: document.getElementById('historyEmpty'),
-    statStreak: document.getElementById('statStreak'),
     statAvg: document.getElementById('statAvg'),
     statCount: document.getElementById('statCount'),
     statLongest: document.getElementById('statLongest'),
@@ -807,7 +806,6 @@
     el.statCount.textContent = items.length;
 
     if (items.length === 0) {
-      el.statStreak.textContent = '0';
       el.statAvg.textContent = '0h';
       el.statLongest.textContent = '0h';
       el.statTotalTime.textContent = '0h';
@@ -819,7 +817,6 @@
     let totalH = 0;
     let longestH = 0;
     let hitCount = 0;
-    const daysWithHit = new Set();
     const daysCovered = new Set();
 
     items.forEach(e => {
@@ -828,10 +825,7 @@
       const durationH = (end - start) / 3600000;
       totalH += durationH;
       if (durationH > longestH) longestH = durationH;
-      if (durationH >= e.targetHours) {
-        daysWithHit.add(dateKey(end));
-        hitCount++;
-      }
+      if (durationH >= e.targetHours) hitCount++;
 
       // Days with fast: every calendar day the fast overlaps (handles overnight fasts).
       // Capped defensively in case a corrupted/imported entry has an absurd duration.
@@ -850,19 +844,6 @@
     el.statTotalTime.textContent = formatDaysHours(totalH);
     el.statDays.textContent = daysCovered.size;
     el.statHitRate.textContent = `${Math.round((hitCount / items.length) * 100)}%`;
-
-    let streak = 0;
-    let cursor = new Date();
-    while (true) {
-      const key = dateKey(cursor);
-      if (daysWithHit.has(key)) {
-        streak++;
-        cursor.setDate(cursor.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    el.statStreak.textContent = streak;
   }
 
   // ---------- Chart ----------
