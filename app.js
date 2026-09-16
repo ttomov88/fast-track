@@ -82,9 +82,6 @@
     statAvg: document.getElementById('statAvg'),
     statCount: document.getElementById('statCount'),
     statLongest: document.getElementById('statLongest'),
-    statTotalTime: document.getElementById('statTotalTime'),
-    statDays: document.getElementById('statDays'),
-    statHitRate: document.getElementById('statHitRate'),
     importFile: document.getElementById('importFile'),
     chartBars: document.getElementById('chartBars'),
     chartLabels: document.getElementById('chartLabels'),
@@ -789,14 +786,6 @@
     return min > 0 ? `${whole}h ${min}m` : `${whole}h`;
   }
 
-  // "1d 14h" style formatting for larger cumulative totals
-  function formatDaysHours(totalHours) {
-    const totalWholeHours = Math.round(totalHours);
-    const days = Math.floor(totalWholeHours / 24);
-    const hours = totalWholeHours % 24;
-    return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
-  }
-
   function dateKey(d) {
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   }
@@ -808,42 +797,20 @@
     if (items.length === 0) {
       el.statAvg.textContent = '0h';
       el.statLongest.textContent = '0h';
-      el.statTotalTime.textContent = '0h';
-      el.statDays.textContent = '0';
-      el.statHitRate.textContent = '0%';
       return;
     }
 
     let totalH = 0;
     let longestH = 0;
-    let hitCount = 0;
-    const daysCovered = new Set();
 
     items.forEach(e => {
-      const start = new Date(e.startISO);
-      const end = new Date(e.endISO);
-      const durationH = (end - start) / 3600000;
+      const durationH = (new Date(e.endISO) - new Date(e.startISO)) / 3600000;
       totalH += durationH;
       if (durationH > longestH) longestH = durationH;
-      if (durationH >= e.targetHours) hitCount++;
-
-      // Days with fast: every calendar day the fast overlaps (handles overnight fasts).
-      // Capped defensively in case a corrupted/imported entry has an absurd duration.
-      const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      let guard = 0;
-      while (cursor <= endDay && guard < 400) {
-        daysCovered.add(dateKey(cursor));
-        cursor.setDate(cursor.getDate() + 1);
-        guard++;
-      }
     });
 
     el.statAvg.textContent = formatHoursShort(totalH / items.length);
-    el.statLongest.textContent = formatDaysHours(longestH);
-    el.statTotalTime.textContent = formatDaysHours(totalH);
-    el.statDays.textContent = daysCovered.size;
-    el.statHitRate.textContent = `${Math.round((hitCount / items.length) * 100)}%`;
+    el.statLongest.textContent = `${Math.round(longestH)}h`;
   }
 
   // ---------- Chart ----------
