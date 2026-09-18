@@ -232,6 +232,7 @@ main{ flex:1; display:flex; flex-direction:column; }
 .hi-right{ display:flex; align-items:center; gap:10px; }
 .hi-duration{
   font-size:14px; font-weight:700; padding:4px 10px; border-radius:10px;
+  white-space:nowrap; flex-shrink:0;
 }
 .hi-duration.hit{ background:rgba(13,148,136,0.12); color:var(--accent); }
 .hi-duration.miss{ background:rgba(220,38,38,0.12); color:var(--danger); }
