@@ -1065,7 +1065,11 @@
   const shareFilesSupported = (() => {
     if (!navigator.share || !navigator.canShare) return false;
     try {
-      const probe = new File(['{}'], 'probe.json', { type: 'application/json' });
+      // Probe with the same type/extension we'll actually share (see below) so detection
+      // matches reality — Chromium restricts Web Share file types to a curated allowlist
+      // (audio/image/pdf/video/text), and testing with a mismatched type risks canShare()
+      // saying yes while the real share() call later rejects it.
+      const probe = new File(['{}'], 'probe.txt', { type: 'text/plain' });
       return navigator.canShare({ files: [probe] });
     } catch (e) {
       return false;
@@ -1076,7 +1080,13 @@
     el.settingsShareBtn.classList.remove('hidden');
     el.settingsShareBtn.addEventListener('click', async () => {
       const { blob, filename } = buildBackupFile();
-      const file = new File([blob], filename, { type: 'application/json' });
+      // Share as .txt/text/plain rather than .json/application/json: Chromium's Web Share
+      // API only permits a curated allowlist of file types, and JSON isn't reliably on it —
+      // the content is unchanged, still valid JSON, just wrapped in a permitted file type.
+      // Import doesn't care about file extension, only content, so this changes nothing
+      // about compatibility with the rest of the app.
+      const shareFilename = filename.replace(/\.json$/, '.txt');
+      const file = new File([blob], shareFilename, { type: 'text/plain' });
       try {
         await navigator.share({ files: [file], title: 'Fast Track backup' });
         markManualBackupDone();
