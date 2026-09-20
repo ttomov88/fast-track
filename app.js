@@ -79,6 +79,7 @@
     endFastConfirmBtn: document.getElementById('endFastConfirmBtn'),
     historyList: document.getElementById('historyList'),
     historyEmpty: document.getElementById('historyEmpty'),
+    historyLoadMoreBtn: document.getElementById('historyLoadMoreBtn'),
     statAvg: document.getElementById('statAvg'),
     statCount: document.getElementById('statCount'),
     statLongest: document.getElementById('statLongest'),
@@ -102,11 +103,11 @@
     startReminderHourSelect: document.getElementById('startReminderHourSelect'),
     startReminderMinuteSelect: document.getElementById('startReminderMinuteSelect'),
     settingsExportBtn: document.getElementById('settingsExportBtn'),
+    settingsShareBtn: document.getElementById('settingsShareBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
     resetDataBtn: document.getElementById('resetDataBtn'),
     autoBackupToggle: document.getElementById('autoBackupToggle'),
     autoBackupStatusText: document.getElementById('autoBackupStatusText'),
-    backupNowBtn: document.getElementById('backupNowBtn'),
     // fast add/edit modal
     fastEditModal: document.getElementById('fastEditModal'),
     fastEditTitle: document.getElementById('fastEditTitle'),
@@ -128,6 +129,8 @@
   let tickInterval = null;
   let selectedTargetHours = state.lastTargetHours || 16;
   let currentChartMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const HISTORY_PAGE_SIZE = 30;
+  let historyRenderLimit = HISTORY_PAGE_SIZE;
   let editingFastIndex = null; // null = adding a new fast; number = editing state.history[idx]
 
   // ---------- Generic styled dialog (replaces confirm()/alert()) ----------
@@ -207,6 +210,7 @@
 
   el.historyBtn.addEventListener('click', () => {
     showView('historyView');
+    historyRenderLimit = HISTORY_PAGE_SIZE;
     renderHistory();
     renderChart();
   });
@@ -713,7 +717,8 @@
     el.historyList.innerHTML = '';
     el.historyEmpty.classList.toggle('hidden', items.length > 0);
 
-    items.forEach((entry, idx) => {
+    const visible = items.slice(0, historyRenderLimit);
+    visible.forEach((entry, idx) => {
       const start = new Date(entry.startISO);
       const end = new Date(entry.endISO);
       const durationMs = end - start;
@@ -769,7 +774,16 @@
     });
 
     renderStats();
+
+    const remaining = items.length - visible.length;
+    el.historyLoadMoreBtn.classList.toggle('hidden', remaining <= 0);
+    el.historyLoadMoreBtn.textContent = `Load more (${remaining} remaining)`;
   }
+
+  el.historyLoadMoreBtn.addEventListener('click', () => {
+    historyRenderLimit += HISTORY_PAGE_SIZE;
+    renderHistory();
+  });
 
   // Compact, consistent day-month-year format regardless of device locale, e.g. "8 Aug 25".
   function formatShortDate(date) {
@@ -902,32 +916,12 @@
   }
 
   // ---------- Export / Import ----------
-  function doExport() {
-    const payload = {
-      app: 'fast-track',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      history: state.history,
-      current: state.current,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `fast-track-export-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   function triggerImport() {
     el.importFile.value = '';
     el.importFile.click();
   }
 
-  el.settingsExportBtn.addEventListener('click', doExport);
+  el.settingsExportBtn.addEventListener('click', performManualBackup);
   el.settingsImportBtn.addEventListener('click', triggerImport);
 
   el.importFile.addEventListener('change', () => {
@@ -1040,7 +1034,7 @@
     ].join('::');
   }
 
-  function triggerBackupDownload() {
+  function buildBackupFile() {
     const payload = {
       app: 'fast-track',
       version: 1,
@@ -1048,16 +1042,50 @@
       history: state.history,
       current: state.current,
     };
+    const stamp = new Date().toISOString().slice(0, 10);
+    const filename = `fast-track-backup-${stamp}.json`;
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    return { blob, filename };
+  }
+
+  function triggerBackupDownload() {
+    const { blob, filename } = buildBackupFile();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `fast-track-backup-${stamp}.json`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  // Feature-detected: file sharing via navigator.share isn't available on every
+  // browser/OS combo, so the Share button only appears when it will actually work.
+  const shareFilesSupported = (() => {
+    if (!navigator.share || !navigator.canShare) return false;
+    try {
+      const probe = new File(['{}'], 'probe.json', { type: 'application/json' });
+      return navigator.canShare({ files: [probe] });
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (shareFilesSupported) {
+    el.settingsShareBtn.classList.remove('hidden');
+    el.settingsShareBtn.addEventListener('click', async () => {
+      const { blob, filename } = buildBackupFile();
+      const file = new File([blob], filename, { type: 'application/json' });
+      try {
+        await navigator.share({ files: [file], title: 'Fast Track backup' });
+        markManualBackupDone();
+      } catch (e) {
+        if (e && e.name !== 'AbortError') {
+          await showAlert('Share failed', "Couldn't open the share sheet — try Export instead.");
+        }
+      }
+    });
   }
 
   function updateAutoBackupUI() {
@@ -1087,13 +1115,19 @@
     if (state.autoBackupEnabled) maybeAutoBackup();
   });
 
-  el.backupNowBtn.addEventListener('click', () => {
-    triggerBackupDownload();
+  // Shared by the automatic check, the manual "Export" button, and the Share button —
+  // any of these counts as "backed up now", so they all funnel through one status update.
+  function markManualBackupDone() {
     state.lastAutoBackupAt = new Date().toISOString();
     state.lastAutoBackupFingerprint = computeBackupFingerprint();
     save();
     updateAutoBackupUI();
-  });
+  }
+
+  function performManualBackup() {
+    triggerBackupDownload();
+    markManualBackupDone();
+  }
 
   // ---------- Init ----------
   setPresetUI(selectedTargetHours);

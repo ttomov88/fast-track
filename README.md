@@ -37,7 +37,7 @@ It can't guarantee waking your phone up hours later with Chrome fully closed and
 ## Import / Export
 
 In **Settings** (gear icon, top of the History screen):
-- **Export** downloads a JSON file with all your logged fasts (and your in-progress fast, if any).
+- **Export** downloads a JSON file with all your logged fasts (and your in-progress fast, if any). This is also how you back up on demand — it updates the same "last backup" status shown under Auto-backup below, so there's one action for both manual export and manual backup.
 - **Import** reads a JSON file and merges its fasts into your history (duplicates, matched by identical start/end time, are skipped automatically). If the file also contains an in-progress fast and you don't currently have one running, you'll be asked whether to resume it.
 - **Clear all data** wipes logged fasts and any active fast (not your settings). Confirms before doing it.
 
@@ -46,22 +46,22 @@ Useful for moving data between devices, or backing up before clearing browser da
 ## History & stats
 
 The History screen (clock icon) shows:
-- Streak, average length, total fasts
-- Longest fast, total cumulative fasting time, and days with a fast (an overnight fast counts toward both calendar days it touches, so this can exceed your fast count — matches how most fasting apps report it)
-- A bar chart of hours fasted per day, with **Week / Month / Year** toggles and a dashed reference line at your current default goal
-- The list of individual past fasts, each editable/deletable
+- Average fast length, total fasts, and your longest fast (in hours)
+- A bar chart of hours fasted per day for the currently selected month, navigable with ‹ › arrows, with a dashed reference line at your current default goal — a fast that spans midnight has its hours split proportionally across both days, not dumped onto whichever day it ended
+- The list of individual past fasts, each editable/deletable, with the actual duration shown in a green or red pill depending on whether it hit that fast's goal
 
 ## Settings
 
 - **Default fasting goal** — the target used whenever you start a new fast (kept in sync with the picker on the main screen).
 - **Notifications** — a toggle mirroring your browser permission, plus an optional **remind me before goal** heads-up, a **remind me exactly at goal**, and a daily **remind me to start a fast** at a time you set.
+- **Auto-backup to Downloads** — see below.
 - **Data** — export, import, and clear-all-data.
 
 ## Auto-backup to Downloads
 
 This is the fix for the local-storage-can-get-wiped problem: Chrome's "Clear browsing data" erases everything an installed PWA stores locally (localStorage), with no special protection for installed apps. A file that's already been downloaded to your phone's Downloads folder, though, lives in separate OS-level storage — "Clear browsing data" doesn't touch it. That's the safety net this feature builds.
 
-**How it works:** in Settings, flip on **Auto-backup to Downloads**. From then on, the app downloads a dated JSON snapshot (`fast-track-backup-2026-09-04.json`, etc.) to your phone's normal Downloads folder whenever your fasting data has actually changed — checked when you open the app, when you return to it, and right after any edit — but never more than once every 4 hours, even if you make several changes in one sitting. There's also a **Back up now** button for an on-demand copy anytime.
+**How it works:** in Settings, flip on **Auto-backup to Downloads**. From then on, the app downloads a dated JSON snapshot (`fast-track-backup-2026-09-04.json`, etc.) to your phone's normal Downloads folder whenever your fasting data has actually changed — checked when you open the app, when you return to it, and right after any edit — but never more than once every 4 hours, even if you make several changes in one sitting. Want a copy right now instead of waiting? Tap **Export** in the Data section below — it's the exact same download, and it also updates the "last backup" status shown here.
 
 ### Why it's not literally "every time the app opens"
 
