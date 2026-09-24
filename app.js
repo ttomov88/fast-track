@@ -23,9 +23,6 @@
       startReminderTime: '20:00',
       startReminderLastFiredDate: null,
       theme: 'light',
-      autoBackupEnabled: false,
-      lastAutoBackupAt: null,
-      lastAutoBackupFingerprint: null,
     };
   }
 
@@ -106,8 +103,6 @@
     settingsShareBtn: document.getElementById('settingsShareBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
     resetDataBtn: document.getElementById('resetDataBtn'),
-    autoBackupToggle: document.getElementById('autoBackupToggle'),
-    autoBackupStatusText: document.getElementById('autoBackupStatusText'),
     // fast add/edit modal
     fastEditModal: document.getElementById('fastEditModal'),
     fastEditTitle: document.getElementById('fastEditTitle'),
@@ -318,8 +313,6 @@
     };
     save();
     render();
-    notify('Fast started', `Goal: ${selectedTargetHours}h. You'll be notified when it's reached.`);
-    maybeAutoBackup();
   }
 
   function endFast(endDate) {
@@ -330,12 +323,11 @@
       targetHours: state.current.targetHours,
     };
     state.history.unshift(entry);
-    const durationH = (new Date(entry.endISO) - new Date(entry.startISO)) / 3600000;
     state.current = null;
     save();
     render();
-    notify('Fast ended', `You fasted for ${formatHoursShort(durationH)}.`);
-    maybeAutoBackup();
+    // Every fast, no exceptions — no setting to turn this off, no throttling.
+    triggerBackupDownload();
   }
 
   // ---------- Notifications ----------
@@ -493,7 +485,6 @@
     if (document.visibilityState === 'visible') {
       checkNotificationCatchUp();
       checkStartReminder();
-      maybeAutoBackup();
     }
   });
 
@@ -617,7 +608,6 @@
     el.fastEditModal.classList.add('hidden');
     renderHistory();
     renderChart();
-    maybeAutoBackup();
   });
 
   // ---------- Rendering: timer ----------
@@ -769,7 +759,6 @@
         save();
         renderHistory();
         renderChart();
-        maybeAutoBackup();
       });
     });
 
@@ -989,7 +978,6 @@
     render();
     renderHistory();
     renderChart();
-    maybeAutoBackup();
     const skippedMsg = skipped > 0 ? ` (${skipped} skipped — missing or implausible data)` : '';
     await showAlert('Import complete', `Imported ${added} fast${added === 1 ? '' : 's'}${importedCurrent ? ' and resumed your active fast' : ''}.${skippedMsg}`);
   }
@@ -1008,31 +996,19 @@
     render();
     renderHistory();
     renderChart();
-    maybeAutoBackup();
   });
 
-  // ---------- Auto-backup to Downloads ----------
+  // ---------- Backup to Downloads ----------
   // Design notes:
   // - A downloaded file lives in the OS-level Downloads folder, which "Clear browsing data" in
   //   Chrome does NOT touch — unlike localStorage, which is exactly what gets wiped by that action.
   //   This is a genuinely separate safety net from local storage, not just a convenience.
-  // - Only triggers when the data actually changed since the last backup, AND at most once every
-  //   few hours even if you make several changes in one sitting — avoids piling up near-duplicate
-  //   files and avoids Chrome's anti-abuse throttling of repeated automatic downloads.
+  // - Automatic download happens unconditionally every time a fast ends (see endFast()) — no
+  //   setting to turn it off, no throttling. Manual "Export" (below) triggers the exact same
+  //   function, so both produce identically-named files: fast-track-backup-<date>.json.
   // - There's no way for a web app to remember a specific folder on Android and silently overwrite
   //   a file in it (that part of the File System Access API isn't supported on Android Chrome) —
   //   so every backup is a new file in the default Downloads folder, named with the date.
-
-  const AUTO_BACKUP_MIN_INTERVAL_MS = 4 * 3600 * 1000; // 4 hours
-
-  function computeBackupFingerprint() {
-    const last = state.history[0];
-    return [
-      state.history.length,
-      last ? `${last.startISO}|${last.endISO}` : '',
-      state.current ? state.current.startISO : '',
-    ].join('::');
-  }
 
   function buildBackupFile() {
     const payload = {
@@ -1089,7 +1065,6 @@
       const file = new File([blob], shareFilename, { type: 'text/plain' });
       try {
         await navigator.share({ files: [file], title: 'Fast Track backup' });
-        markManualBackupDone();
       } catch (e) {
         if (e && e.name !== 'AbortError') {
           await showAlert('Share failed', "Couldn't open the share sheet — try Export instead.");
@@ -1098,55 +1073,16 @@
     });
   }
 
-  function updateAutoBackupUI() {
-    el.autoBackupToggle.classList.toggle('on', !!state.autoBackupEnabled);
-    el.autoBackupToggle.setAttribute('aria-checked', String(!!state.autoBackupEnabled));
-    el.autoBackupStatusText.textContent = state.lastAutoBackupAt
-      ? `Last backup ${new Date(state.lastAutoBackupAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
-      : 'No backup yet';
-  }
-
-  function maybeAutoBackup() {
-    if (!state.autoBackupEnabled) return;
-    const fingerprint = computeBackupFingerprint();
-    if (fingerprint === state.lastAutoBackupFingerprint) return; // nothing new since last backup
-    if (state.lastAutoBackupAt && (Date.now() - new Date(state.lastAutoBackupAt).getTime()) < AUTO_BACKUP_MIN_INTERVAL_MS) return;
-    triggerBackupDownload();
-    state.lastAutoBackupAt = new Date().toISOString();
-    state.lastAutoBackupFingerprint = fingerprint;
-    save();
-    updateAutoBackupUI();
-  }
-
-  el.autoBackupToggle.addEventListener('click', () => {
-    state.autoBackupEnabled = !state.autoBackupEnabled;
-    save();
-    updateAutoBackupUI();
-    if (state.autoBackupEnabled) maybeAutoBackup();
-  });
-
-  // Shared by the automatic check, the manual "Export" button, and the Share button —
-  // any of these counts as "backed up now", so they all funnel through one status update.
-  function markManualBackupDone() {
-    state.lastAutoBackupAt = new Date().toISOString();
-    state.lastAutoBackupFingerprint = computeBackupFingerprint();
-    save();
-    updateAutoBackupUI();
-  }
-
   function performManualBackup() {
     triggerBackupDownload();
-    markManualBackupDone();
   }
 
   // ---------- Init ----------
   setPresetUI(selectedTargetHours);
   applyTheme();
   syncSettingsUI();
-  updateAutoBackupUI();
   checkNotificationCatchUp();
   checkStartReminder();
-  maybeAutoBackup();
   render();
 
   // ---------- Service worker ----------

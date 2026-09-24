@@ -37,7 +37,8 @@ It can't guarantee waking your phone up hours later with Chrome fully closed and
 ## Import / Export
 
 In **Settings** (gear icon, top of the History screen):
-- **Export** downloads a JSON file with all your logged fasts (and your in-progress fast, if any). This is also how you back up on demand — it updates the same "last backup" status shown under Auto-backup below, so there's one action for both manual export and manual backup.
+- **Export** downloads a JSON file with all your logged fasts (and your in-progress fast, if any) — the exact same file format as the automatic backup described below, so you can trigger one on demand anytime.
+- **Share** (only shown on devices that support it) hands that same file straight to Android's share sheet — send it to Google Drive, Telegram, email, etc. in one tap, no Downloads-folder detour.
 - **Import** reads a JSON file and merges its fasts into your history (duplicates, matched by identical start/end time, are skipped automatically). If the file also contains an in-progress fast and you don't currently have one running, you'll be asked whether to resume it.
 - **Clear all data** wipes logged fasts and any active fast (not your settings). Confirms before doing it.
 
@@ -48,34 +49,30 @@ Useful for moving data between devices, or backing up before clearing browser da
 The History screen (clock icon) shows:
 - Average fast length, total fasts, and your longest fast (in hours)
 - A bar chart of hours fasted per day for the currently selected month, navigable with ‹ › arrows, with a dashed reference line at your current default goal — a fast that spans midnight has its hours split proportionally across both days, not dumped onto whichever day it ended
-- The list of individual past fasts, each editable/deletable, with the actual duration shown in a green or red pill depending on whether it hit that fast's goal
+- The list of individual past fasts (30 at a time, with a "Load more" button below), each editable/deletable, with the actual duration shown in a green or red pill depending on whether it hit that fast's goal
 
 ## Settings
 
 - **Default fasting goal** — the target used whenever you start a new fast (kept in sync with the picker on the main screen).
 - **Notifications** — a toggle mirroring your browser permission, plus an optional **remind me before goal** heads-up, a **remind me exactly at goal**, and a daily **remind me to start a fast** at a time you set.
-- **Auto-backup to Downloads** — see below.
-- **Data** — export, import, and clear-all-data.
+- **Data** — export, share, import, and clear-all-data.
 
-## Auto-backup to Downloads
+## Automatic backup
 
 This is the fix for the local-storage-can-get-wiped problem: Chrome's "Clear browsing data" erases everything an installed PWA stores locally (localStorage), with no special protection for installed apps. A file that's already been downloaded to your phone's Downloads folder, though, lives in separate OS-level storage — "Clear browsing data" doesn't touch it. That's the safety net this feature builds.
 
-**How it works:** in Settings, flip on **Auto-backup to Downloads**. From then on, the app downloads a dated JSON snapshot (`fast-track-backup-2026-09-04.json`, etc.) to your phone's normal Downloads folder whenever your fasting data has actually changed — checked when you open the app, when you return to it, and right after any edit — but never more than once every 4 hours, even if you make several changes in one sitting. Want a copy right now instead of waiting? Tap **Export** in the Data section below — it's the exact same download, and it also updates the "last backup" status shown here.
+**How it works:** every time you end a fast, the app silently downloads a dated JSON snapshot (`fast-track-backup-2026-09-04.json`) to your phone's normal Downloads folder — no setting to turn it off, no dialog, no throttling. Ending a fast is a natural, infrequent checkpoint (once a day for most fasting patterns) tied to an actual button tap, which is what makes downloading on every occurrence practical rather than excessive. Want a copy right now instead of waiting for your next fast to end? Tap **Export** in Settings → Data — it's the exact same download, same filename pattern, so backups from either path are indistinguishable.
 
-### Why it's not literally "every time the app opens"
+### Why this wasn't simply "every time the app opens"
 
-A web app on Android can't remember a specific folder you pick and silently overwrite a file in it — that part of the File System Access API (which desktop Chrome supports) isn't available on Android Chrome. The only thing available is triggering a normal one-off download each time, which always lands in the general Downloads folder as a brand new file, never an overwrite. Downloading on every single app launch would:
-- Pile up near-identical files fast (dozens or hundreds over time), and
-- Likely get silently throttled by Chrome's anti-abuse protection against repeated automatic downloads.
-
-Gating on "did the data actually change" plus a minimum spacing between backups avoids both problems while still keeping a fresh copy in Downloads.
+A web app on Android can't remember a specific folder you pick and silently overwrite a file in it — that part of the File System Access API (which desktop Chrome supports) isn't available on Android Chrome. The only thing available is triggering a normal one-off download each time, which always lands in the general Downloads folder as a brand new file, never an overwrite. Downloading on every single app *launch* would pile up near-identical files fast and risk Chrome's anti-abuse throttling of repeated automatic downloads with no user gesture behind them. Tying it to *ending a fast* instead avoids both: it's infrequent by nature, and it's backed by a real tap on a button, not a background timer.
 
 ### Making it actually redundant
 
-A file in Downloads survives "Clear browsing data," but not a full factory reset or losing the phone. If you want real off-device redundancy, point your phone's Google Drive app (or Synology Drive, or any file-sync app) at your Downloads folder to auto-upload from there — that's a phone-level setting, not something this web app can configure for you, but it's the natural next step once files are landing in Downloads reliably.
+A file in Downloads survives "Clear browsing data," but not a full factory reset or losing the phone. If you want real off-device redundancy, point your phone's Google Drive app (or Synology Drive, or any file-sync app) at your Downloads folder to auto-upload from there — that's a phone-level setting, not something this web app can configure for you, but it's the natural next step once files are landing in Downloads reliably. The **Share** button is a more direct route to the same goal, one tap at a time.
 
 ### Known limitations
 
-- Files aren't cleaned up automatically — they'll accumulate in Downloads over months. Delete old ones periodically, or point a sync app at the folder as above.
-- If Chrome is set to "Ask where to save each file" (a setting some people enable), each auto-backup will show a save dialog rather than silently downloading — worth checking that setting is off for a smooth experience.
+- Files aren't cleaned up automatically — they'll accumulate in Downloads over time (one per day, roughly, under normal use). Delete old ones periodically, or point a sync app at the folder as above.
+- If you end more than one fast on the same calendar day, both downloads share the same filename — Android's download manager keeps both by appending "(1)", "(2)", etc., rather than overwriting.
+- If Chrome is set to "Ask where to save each file" (a setting some people enable), each backup will show a save dialog rather than downloading silently — worth checking that setting is off for a smooth experience.
