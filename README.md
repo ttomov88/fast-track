@@ -54,7 +54,7 @@ The History screen (clock icon) shows:
 ## Settings
 
 - **Default fasting goal** — the target used whenever you start a new fast (kept in sync with the picker on the main screen).
-- **Notifications** — a toggle mirroring your browser permission, plus **remind me exactly at goal**.
+- **Notifications** — one toggle mirroring your browser permission; when on, you're notified the moment your fast hits its goal.
 - **Data** — export, share, import, and clear-all-data.
 
 ## Automatic backup
