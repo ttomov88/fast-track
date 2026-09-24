@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fast Track</title>
+  <title>Fast Track App</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/png" href="icons/icon-192.png">
 
   <!-- Firebase Web SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -28,64 +27,22 @@
   </script>
 </head>
 <body>
-  <!-- Top Auth Banner -->
-  <div id="auth-bar" style="padding: 10px 16px; background: #1e293b; color: #ffffff; display: flex; justify-content: space-between; align-items: center; font-family: system-ui, sans-serif; font-size: 14px;">
-    <span id="user-display">Checking authentication...</span>
-    <div>
-      <button id="notify-btn" onclick="requestNotificationPermission()" style="display:none; padding: 6px 12px; margin-right: 8px; background-color: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Enable Notifications</button>
-      <button id="auth-btn" onclick="toggleAuth()" style="padding: 6px 12px; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Log In with Google</button>
-    </div>
-  </div>
+  <!-- Header / Login Status Bar -->
+  <header style="padding: 12px 20px; background: #1f2937; color: #ffffff; display: flex; justify-content: space-between; align-items: center; font-family: system-ui, sans-serif;">
+    <span id="user-display">Checking login status...</span>
+    <button id="auth-btn" onclick="toggleAuth()" style="padding: 8px 16px; background-color: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Log In with Google</button>
+  </header>
 
-  <!-- Original Fast App Content -->
-  <div id="app-content">
-    <div class="container">
-      <header>
-        <h1>Fast Track</h1>
-      </header>
-
-      <section class="timer-section">
-        <div class="timer-display">
-          <span id="timer">00:00:00</span>
-        </div>
-        <div class="controls">
-          <button id="startBtn">Start Fast</button>
-          <button id="stopBtn" disabled>End Fast</button>
-        </div>
-      </section>
-
-      <section class="history-section">
-        <h2>Fast History</h2>
-        <ul id="fastList"></ul>
-      </section>
+  <!-- Protected App Area -->
+  <div id="app-container" style="display: none; padding: 20px; font-family: system-ui, sans-serif;">
+    <h1>Fast Track Dashboard</h1>
+    <p>Your fasting records automatically synchronize with Google Cloud Firestore across all devices.</p>
+    
+    <div style="margin-top: 20px;">
+      <button onclick="requestNotificationPermission()" style="padding: 10px 18px; background-color: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Enable Phone Notifications</button>
     </div>
   </div>
 
   <script src="app.js"></script>
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
-
-  <script>
-    // Copy these values from Firebase Console -> Project Settings -> General -> Your Apps
-    const firebaseConfig = {
-      apiKey: "YOUR_ACTUAL_API_KEY",
-      authDomain: "fast-track-app-tt.firebaseapp.com",
-      projectId: "fast-track-app-tt",
-      storageBucket: "fast-track-app-tt.appspot.com",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-  </script>
-
-  <script src="app.js"></script>
-</body>
-</html>
 </body>
 </html>
