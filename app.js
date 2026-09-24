@@ -1,144 +1,97 @@
-// Tell Firebase we want to use Google for authentication
-const provider = new firebase.auth.GoogleAuthProvider();
-
-// Function to pop up the Google Login window
-function loginWithGoogle() {
-  auth.signInWithPopup(provider)
-    .then((result) => {
-      console.log("Logged in as:", result.user.displayName);
-    })
-    .catch((error) => console.error("Login failed:", error));
-}
-
-// Automatically check if the user is logged in
-auth.onAuthStateChanged((user) => {
-  if (user) {
-    console.log("User is signed in:", user.email);
-    // Load their saved data from Firestore
-    loadUserData(user.uid);
-  } else {
-    // If not logged in, prompt them to sign in
-    loginWithGoogle();
-  }
-});
 const auth = firebase.auth();
 const db = firebase.firestore();
 
 let currentUser = null;
-let timerInterval = null;
-let startTime = null;
 
-// DOM Elements
-const authBtn = document.getElementById('auth-btn');
-const notifyBtn = document.getElementById('notify-btn');
-const userDisplay = document.getElementById('user-display');
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const timerDisplay = document.getElementById('timer');
-const fastList = document.getElementById('fastList');
-
-// Auth Listener
+// Track authentication state changes
 auth.onAuthStateChanged(user => {
+  const userDisplay = document.getElementById('user-display');
+  const authBtn = document.getElementById('auth-btn');
+  const appContainer = document.getElementById('app-container');
+
   if (user) {
     currentUser = user;
     if (userDisplay) userDisplay.innerText = `Logged in: ${user.email}`;
     if (authBtn) authBtn.innerText = "Log Out";
-    if (notifyBtn) notifyBtn.style.display = "inline-block";
+    if (appContainer) appContainer.style.display = "block";
+    
+    // Automatically load saved data from Cloud Firestore
     loadUserFasts();
   } else {
     currentUser = null;
     if (userDisplay) userDisplay.innerText = "Not logged in";
     if (authBtn) authBtn.innerText = "Log In with Google";
-    if (notifyBtn) notifyBtn.style.display = "none";
-    if (fastList) fastList.innerHTML = "";
+    if (appContainer) appContainer.style.display = "none";
   }
 });
 
+// Google Sign-In & Sign-Out Handler
 function toggleAuth() {
   if (currentUser) {
     auth.signOut();
   } else {
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider).catch(err => alert("Login error: " + err.message));
+    auth.signInWithPopup(provider).catch(err => {
+      alert("Login failed: " + err.message);
+    });
   }
 }
 
-// Timer Logic
-if (startBtn) {
-  startBtn.addEventListener('click', () => {
-    startTime = Date.now();
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    
-    timerInterval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      const hours = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-      const minutes = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-      const seconds = String(elapsed % 60).padStart(2, '0');
-      timerDisplay.innerText = `${hours}:${minutes}:${seconds}`;
-    }, 1000);
-  });
+// SAVE FASTING DATA TO FIRESTORE (Replaces local file download)
+async function saveFastRecord(fastData) {
+  if (!currentUser) {
+    alert("Please log in to save your fasts.");
+    return;
+  }
+
+  try {
+    await db.collection('users').doc(currentUser.uid).collection('fasts').add({
+      ...fastData,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    console.log("Fast saved to database!");
+  } catch (err) {
+    console.error("Error saving fast:", err);
+  }
 }
 
-if (stopBtn) {
-  stopBtn.addEventListener('click', async () => {
-    clearInterval(timerInterval);
-    const endTime = Date.now();
-    const durationSeconds = Math.floor((endTime - startTime) / 1000);
-    
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    timerDisplay.innerText = "00:00:00";
-
-    if (currentUser) {
-      await db.collection('users').doc(currentUser.uid).collection('fasts').add({
-        startTime: new Date(startTime).toISOString(),
-        endTime: new Date(endTime).toISOString(),
-        durationSeconds: durationSeconds,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      loadUserFasts();
-    }
-  });
-}
-
-// Load Fasts from Firestore
+// LOAD SAVED FASTS FROM FIRESTORE
 async function loadUserFasts() {
-  if (!currentUser || !fastList) return;
+  if (!currentUser) return;
 
   try {
     const snapshot = await db.collection('users')
       .doc(currentUser.uid)
       .collection('fasts')
-      .orderBy('createdAt', 'desc')
+      .orderBy('updatedAt', 'desc')
       .get();
 
-    fastList.innerHTML = "";
-    snapshot.docs.forEach(doc => {
-      const data = doc.data();
-      const li = document.createElement('li');
-      const hours = (data.durationSeconds / 3600).toFixed(1);
-      const dateStr = new Date(data.startTime).toLocaleDateString();
-      li.innerText = `${dateStr} — Duration: ${hours} hrs`;
-      fastList.appendChild(li);
-    });
+    const fasts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log("Loaded user fasts from database:", fasts);
   } catch (err) {
     console.error("Error loading fasts:", err);
   }
 }
 
-// Push Notifications
+// ENABLE PHONE PUSH NOTIFICATIONS
 async function requestNotificationPermission() {
-  if (!currentUser) return;
+  if (!currentUser) {
+    alert("Please log in first.");
+    return;
+  }
+
   try {
     const messaging = firebase.messaging();
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
       const token = await messaging.getToken();
       await db.collection('users').doc(currentUser.uid).set({
-        fcmToken: token
+        fcmToken: token,
+        tokenUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
-      alert("Notifications enabled!");
+      alert("Notifications enabled for this device!");
+    } else {
+      alert("Notification permission denied.");
     }
   } catch (err) {
     console.error("Notification setup error:", err);
