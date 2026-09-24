@@ -1,3 +1,4 @@
+cat <<EOF > firebase.json
 {
   "hosting": {
     "public": ".",
@@ -8,3 +9,4 @@
     ]
   }
 }
+EOF
