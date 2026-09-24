@@ -1,99 +1,1004 @@
-const auth = firebase.auth();
-const db = firebase.firestore();
+(() => {
+  'use strict';
 
-let currentUser = null;
+  const STORAGE_KEY = 'fasttrack_state_v1';
+  const RING_CIRC = 2 * Math.PI * 115; // 722.566
+  const PRESET_HOURS = [16, 18, 20, 24];
 
-// Track authentication state changes
-auth.onAuthStateChanged(user => {
-  const userDisplay = document.getElementById('user-display');
-  const authBtn = document.getElementById('auth-btn');
-  const appContainer = document.getElementById('app-container');
+  // ---------- State ----------
+  // state.current: { startISO, targetHours, goalNotified } | null
+  // state.history: [{ startISO, endISO, targetHours }]
+  let state = load();
 
-  if (user) {
-    currentUser = user;
-    if (userDisplay) userDisplay.innerText = `Logged in: ${user.email}`;
-    if (authBtn) authBtn.innerText = "Log Out";
-    if (appContainer) appContainer.style.display = "block";
-    
-    // Automatically load saved data from Cloud Firestore
-    loadUserFasts();
-  } else {
-    currentUser = null;
-    if (userDisplay) userDisplay.innerText = "Not logged in";
-    if (authBtn) authBtn.innerText = "Log In with Google";
-    if (appContainer) appContainer.style.display = "none";
+  function defaultState() {
+    return {
+      current: null,
+      history: [],
+      lastTargetHours: 16,
+      notificationsEnabled: true,
+      remindAtGoal: true,
+      theme: 'light',
+    };
   }
-});
 
-// Google Sign-In & Sign-Out Handler
-function toggleAuth() {
-  if (currentUser) {
-    auth.signOut();
-  } else {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider).catch(err => {
-      alert("Login failed: " + err.message);
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const merged = Object.assign(defaultState(), parsed);
+        if (!['light', 'dark', 'system'].includes(merged.theme)) merged.theme = 'light';
+        return merged;
+      }
+    } catch (e) {}
+    return defaultState();
+  }
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  // ---------- DOM ----------
+  const el = {
+    timerView: document.getElementById('timerView'),
+    historyView: document.getElementById('historyView'),
+    settingsView: document.getElementById('settingsView'),
+    historyBtn: document.getElementById('historyBtn'),
+    appTitle: document.getElementById('appTitle'),
+    backBtn: document.getElementById('backBtn'),
+    settingsBtn: document.getElementById('settingsBtnTop'),
+    settingsBackBtn: document.getElementById('settingsBackBtn'),
+    ringProgress: document.getElementById('ringProgress'),
+    statusLabel: document.getElementById('statusLabel'),
+    elapsedTime: document.getElementById('elapsedTime'),
+    subLabel: document.getElementById('subLabel'),
+    finishTime: document.getElementById('finishTime'),
+    targetPicker: document.getElementById('targetPicker'),
+    customTargetWrap: document.getElementById('customTargetWrap'),
+    customTargetInput: document.getElementById('customTargetInput'),
+    mainActionBtn: document.getElementById('mainActionBtn'),
+    editStartBtn: document.getElementById('editStartBtn'),
+    editModal: document.getElementById('editModal'),
+    editStartInput: document.getElementById('editStartInput'),
+    editCancelBtn: document.getElementById('editCancelBtn'),
+    editSaveBtn: document.getElementById('editSaveBtn'),
+    endFastModal: document.getElementById('endFastModal'),
+    endFastInput: document.getElementById('endFastInput'),
+    endFastCancelBtn: document.getElementById('endFastCancelBtn'),
+    endFastConfirmBtn: document.getElementById('endFastConfirmBtn'),
+    historyList: document.getElementById('historyList'),
+    historyEmpty: document.getElementById('historyEmpty'),
+    historyLoadMoreBtn: document.getElementById('historyLoadMoreBtn'),
+    statAvg: document.getElementById('statAvg'),
+    statCount: document.getElementById('statCount'),
+    statLongest: document.getElementById('statLongest'),
+    importFile: document.getElementById('importFile'),
+    chartBars: document.getElementById('chartBars'),
+    chartLabels: document.getElementById('chartLabels'),
+    chartMonthLabel: document.getElementById('chartMonthLabel'),
+    chartPrevMonthBtn: document.getElementById('chartPrevMonthBtn'),
+    chartNextMonthBtn: document.getElementById('chartNextMonthBtn'),
+    addFastBtn: document.getElementById('addFastBtn'),
+    // settings
+    themeToggle: document.getElementById('themeToggle'),
+    settingsNotifToggle: document.getElementById('settingsNotifToggle'),
+    notifStatusText: document.getElementById('notifStatusText'),
+    goalReminderToggle: document.getElementById('goalReminderToggle'),
+    settingsExportBtn: document.getElementById('settingsExportBtn'),
+    settingsShareBtn: document.getElementById('settingsShareBtn'),
+    settingsImportBtn: document.getElementById('settingsImportBtn'),
+    resetDataBtn: document.getElementById('resetDataBtn'),
+    // fast add/edit modal
+    fastEditModal: document.getElementById('fastEditModal'),
+    fastEditTitle: document.getElementById('fastEditTitle'),
+    fastEditStartInput: document.getElementById('fastEditStartInput'),
+    fastEditEndInput: document.getElementById('fastEditEndInput'),
+    fastEditTargetInput: document.getElementById('fastEditTargetInput'),
+    fastEditCancelBtn: document.getElementById('fastEditCancelBtn'),
+    fastEditSaveBtn: document.getElementById('fastEditSaveBtn'),
+    // generic dialog
+    dialogModal: document.getElementById('dialogModal'),
+    dialogTitle: document.getElementById('dialogTitle'),
+    dialogMessage: document.getElementById('dialogMessage'),
+    dialogOkBtn: document.getElementById('dialogOkBtn'),
+    dialogCancelBtn: document.getElementById('dialogCancelBtn'),
+  };
+
+  el.ringProgress.style.strokeDasharray = RING_CIRC;
+
+  let tickInterval = null;
+  let selectedTargetHours = state.lastTargetHours || 16;
+  let currentChartMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const HISTORY_PAGE_SIZE = 30;
+  let historyRenderLimit = HISTORY_PAGE_SIZE;
+  let editingFastIndex = null; // null = adding a new fast; number = editing state.history[idx]
+
+  // ---------- Generic styled dialog (replaces confirm()/alert()) ----------
+  let dialogResolve = null;
+
+  function showDialog({ title, message, okText = 'OK', cancelText = 'Cancel', showCancel = true, danger = false }) {
+    return new Promise((resolve) => {
+      el.dialogTitle.textContent = title;
+      el.dialogMessage.textContent = message;
+      el.dialogOkBtn.textContent = okText;
+      el.dialogCancelBtn.textContent = cancelText;
+      el.dialogCancelBtn.style.display = showCancel ? '' : 'none';
+      el.dialogOkBtn.classList.toggle('stop', !!danger);
+      dialogResolve = resolve;
+      el.dialogModal.classList.remove('hidden');
     });
   }
-}
 
-// SAVE FASTING DATA TO FIRESTORE (Replaces local file download)
-async function saveFastRecord(fastData) {
-  if (!currentUser) {
-    alert("Please log in to save your fasts.");
-    return;
-  }
-
-  try {
-    await db.collection('users').doc(currentUser.uid).collection('fasts').add({
-      ...fastData,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    console.log("Fast saved to database!");
-  } catch (err) {
-    console.error("Error saving fast:", err);
-  }
-}
-
-// LOAD SAVED FASTS FROM FIRESTORE
-async function loadUserFasts() {
-  if (!currentUser) return;
-
-  try {
-    const snapshot = await db.collection('users')
-      .doc(currentUser.uid)
-      .collection('fasts')
-      .orderBy('updatedAt', 'desc')
-      .get();
-
-    const fasts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    console.log("Loaded user fasts from database:", fasts);
-  } catch (err) {
-    console.error("Error loading fasts:", err);
-  }
-}
-
-// ENABLE PHONE PUSH NOTIFICATIONS
-async function requestNotificationPermission() {
-  if (!currentUser) {
-    alert("Please log in first.");
-    return;
-  }
-
-  try {
-    const messaging = firebase.messaging();
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      const token = await messaging.getToken();
-      await db.collection('users').doc(currentUser.uid).set({
-        fcmToken: token,
-        tokenUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-      alert("Notifications enabled for this device!");
-    } else {
-      alert("Notification permission denied.");
+  function closeDialog(result) {
+    el.dialogModal.classList.add('hidden');
+    if (dialogResolve) {
+      const r = dialogResolve;
+      dialogResolve = null;
+      r(result);
     }
-  } catch (err) {
-    console.error("Notification setup error:", err);
   }
-}
+
+  el.dialogOkBtn.addEventListener('click', () => closeDialog(true));
+  el.dialogCancelBtn.addEventListener('click', () => closeDialog(false));
+
+  function showAlert(title, message) {
+    return showDialog({ title, message, showCancel: false, okText: 'OK' });
+  }
+
+  // ---------- Theme ----------
+  function resolveTheme() {
+    if (state.theme === 'system') {
+      return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    return state.theme;
+  }
+
+  function applyTheme() {
+    const resolved = resolveTheme();
+    document.documentElement.setAttribute('data-theme', resolved);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0f1115' : '#f4f5f7');
+    if (el.themeToggle) {
+      el.themeToggle.querySelectorAll('.theme-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.theme === state.theme);
+      });
+    }
+  }
+
+  if (el.themeToggle) {
+    el.themeToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.theme-btn');
+      if (!btn) return;
+      state.theme = btn.dataset.theme;
+      save();
+      applyTheme();
+    });
+  }
+
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => { if (state.theme === 'system') applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+
+  // ---------- View navigation ----------
+  function showView(id) {
+    [el.timerView, el.historyView, el.settingsView].forEach(v => v.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  el.historyBtn.addEventListener('click', () => {
+    showView('historyView');
+    historyRenderLimit = HISTORY_PAGE_SIZE;
+    renderHistory();
+    renderChart();
+  });
+  el.backBtn.addEventListener('click', () => showView('timerView'));
+  el.appTitle.addEventListener('click', () => showView('timerView'));
+  el.settingsBtn.addEventListener('click', () => {
+    showView('settingsView');
+    syncSettingsUI();
+  });
+  el.settingsBackBtn.addEventListener('click', () => showView('timerView'));
+
+  // ---------- Preset picker (main timer view) ----------
+  function setPresetUI(hours) {
+    const isCustom = !PRESET_HOURS.includes(hours);
+    document.querySelectorAll('.preset').forEach(btn => {
+      const val = btn.dataset.hours;
+      if (val === 'custom') {
+        btn.classList.toggle('active', isCustom);
+      } else {
+        btn.classList.toggle('active', Number(val) === hours && !isCustom);
+      }
+    });
+    el.customTargetWrap.classList.toggle('hidden', !isCustom);
+    if (isCustom) {
+      el.customTargetInput.value = hours;
+    }
+  }
+
+  function chooseTarget(hours) {
+    selectedTargetHours = hours;
+    state.lastTargetHours = hours;
+    save();
+    setPresetUI(hours);
+  }
+
+  el.targetPicker.addEventListener('click', (e) => {
+    const btn = e.target.closest('.preset');
+    if (!btn || state.current) return; // locked while fasting
+    if (btn.dataset.hours === 'custom') {
+      chooseTarget(Number(el.customTargetInput.value) || 16);
+      el.customTargetWrap.classList.remove('hidden');
+    } else {
+      chooseTarget(Number(btn.dataset.hours));
+    }
+  });
+
+  function syncCustomValue(v) {
+    v = Number(v);
+    if (v > 0) chooseTarget(v);
+  }
+  el.customTargetInput.addEventListener('input', () => syncCustomValue(el.customTargetInput.value));
+
+  // ---------- Main action ----------
+  el.mainActionBtn.addEventListener('click', () => {
+    if (state.current) {
+      openEndFastModal();
+    } else {
+      startFast();
+    }
+  });
+
+  function openEndFastModal() {
+    el.endFastInput.value = toLocalInputValue(new Date());
+    el.endFastModal.classList.remove('hidden');
+  }
+
+  el.endFastCancelBtn.addEventListener('click', () => {
+    el.endFastModal.classList.add('hidden');
+  });
+
+  el.endFastConfirmBtn.addEventListener('click', async () => {
+    const val = el.endFastInput.value;
+    if (!val || !state.current) {
+      el.endFastModal.classList.add('hidden');
+      return;
+    }
+    const endDate = new Date(val);
+    const startDate = new Date(state.current.startISO);
+    if (isNaN(endDate.getTime())) {
+      await showAlert('Invalid time', 'Please enter a valid date and time.');
+      return;
+    }
+    if (endDate <= startDate) {
+      await showAlert('Invalid time', 'Finish time must be after the start time.');
+      return;
+    }
+    if (endDate.getTime() > Date.now()) {
+      await showAlert('Invalid time', "Finish time can't be in the future.");
+      return;
+    }
+    if ((endDate - startDate) / 3600000 > 720) {
+      await showAlert('Invalid time', "That's more than 30 days long — double check the date.");
+      return;
+    }
+    el.endFastModal.classList.add('hidden');
+    endFast(endDate);
+  });
+
+  function startFast() {
+    state.current = {
+      startISO: new Date().toISOString(),
+      targetHours: selectedTargetHours,
+      goalNotified: false,
+    };
+    save();
+    render();
+  }
+
+  function endFast(endDate) {
+    if (!state.current) return;
+    const entry = {
+      startISO: state.current.startISO,
+      endISO: (endDate || new Date()).toISOString(),
+      targetHours: state.current.targetHours,
+    };
+    state.history.unshift(entry);
+    state.current = null;
+    save();
+    render();
+    // Every fast, no exceptions — no setting to turn this off, no throttling.
+    triggerBackupDownload();
+  }
+
+  // ---------- Notifications ----------
+  const notifSupported = 'Notification' in window;
+
+  function notifPermission() {
+    return notifSupported ? Notification.permission : 'unsupported';
+  }
+
+  function notificationsActive() {
+    return notifSupported && Notification.permission === 'granted' && state.notificationsEnabled !== false;
+  }
+
+  function syncSettingsUI() {
+    const perm = notifPermission();
+    const active = notificationsActive();
+    el.settingsNotifToggle.classList.toggle('on', active);
+    el.settingsNotifToggle.setAttribute('aria-checked', String(active));
+    if (!notifSupported) {
+      el.notifStatusText.textContent = 'Not supported on this browser';
+    } else if (perm === 'denied') {
+      el.notifStatusText.textContent = 'Blocked in browser settings';
+    } else if (active) {
+      el.notifStatusText.textContent = 'Enabled';
+    } else {
+      el.notifStatusText.textContent = 'Not enabled';
+    }
+
+    el.goalReminderToggle.classList.toggle('on', !!state.remindAtGoal);
+    el.goalReminderToggle.setAttribute('aria-checked', String(!!state.remindAtGoal));
+
+    applyTheme();
+  }
+
+  function requestNotifPermission(cb) {
+    if (!notifSupported) return;
+    Notification.requestPermission().then((perm) => {
+      syncSettingsUI();
+      if (cb) cb(perm);
+    });
+  }
+
+  el.settingsNotifToggle.addEventListener('click', async () => {
+    const perm = notifPermission();
+    if (perm === 'denied') {
+      await showAlert('Notifications blocked', 'Notifications are blocked for this app in your browser settings. Enable them from your browser/site settings first.');
+      return;
+    }
+    if (perm === 'default') {
+      requestNotifPermission((perm2) => {
+        state.notificationsEnabled = (perm2 === 'granted');
+        save();
+        syncSettingsUI();
+      });
+      return;
+    }
+    // already granted — just toggle app-level preference
+    state.notificationsEnabled = !notificationsActive();
+    save();
+    syncSettingsUI();
+  });
+
+  el.goalReminderToggle.addEventListener('click', () => {
+    state.remindAtGoal = !state.remindAtGoal;
+    save();
+    syncSettingsUI();
+  });
+
+  function notify(title, body) {
+    if (!notificationsActive()) return;
+    const opts = {
+      body,
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      tag: 'fasttrack-' + title.replace(/\s+/g, '-').toLowerCase(),
+    };
+    if ('serviceWorker' in navigator) {
+      const swReady = navigator.serviceWorker.ready;
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 1500));
+      Promise.race([swReady, timeout]).then((reg) => {
+        if (reg && reg.showNotification) {
+          reg.showNotification(title, opts);
+        } else {
+          try { new Notification(title, opts); } catch (e) {}
+        }
+      }).catch(() => {
+        try { new Notification(title, opts); } catch (e) {}
+      });
+    } else {
+      try { new Notification(title, opts); } catch (e) {}
+    }
+  }
+
+  // Catch up on the goal-reached notification if it should have fired while the app was
+  // closed/backgrounded.
+  function checkNotificationCatchUp() {
+    if (!state.current) return;
+    const start = new Date(state.current.startISO).getTime();
+    const targetMs = state.current.targetHours * 3600 * 1000;
+    const elapsedMs = Date.now() - start;
+
+    if (!state.current.goalNotified && elapsedMs >= targetMs) {
+      state.current.goalNotified = true;
+      save();
+      if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkNotificationCatchUp();
+    }
+  });
+
+  // ---------- Edit start time (active fast) ----------
+  el.editStartBtn.addEventListener('click', () => {
+    if (!state.current) return;
+    const d = new Date(state.current.startISO);
+    el.editStartInput.value = toLocalInputValue(d);
+    el.editModal.classList.remove('hidden');
+  });
+
+  el.editCancelBtn.addEventListener('click', () => {
+    el.editModal.classList.add('hidden');
+  });
+
+  el.editSaveBtn.addEventListener('click', async () => {
+    const val = el.editStartInput.value;
+    if (val && state.current) {
+      const newDate = new Date(val);
+      const now = Date.now();
+      if (isNaN(newDate.getTime()) || newDate.getTime() >= now) {
+        el.editModal.classList.add('hidden');
+        await showAlert('Invalid time', "Start time must be in the past.");
+        return;
+      }
+      if ((now - newDate.getTime()) / 3600000 > 720) {
+        el.editModal.classList.add('hidden');
+        await showAlert('Invalid time', "That's more than 30 days ago — double check the date.");
+        return;
+      }
+      state.current.startISO = newDate.toISOString();
+      state.current.goalNotified = false;
+      save();
+      render();
+    }
+    el.editModal.classList.add('hidden');
+  });
+
+  function toLocalInputValue(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  // ---------- Add / edit a past fast ----------
+  function openFastEditModal(idx) {
+    editingFastIndex = idx;
+    let entry;
+    if (idx === null) {
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - (state.lastTargetHours || 16) * 3600000);
+      entry = { startISO: defaultStart.toISOString(), endISO: now.toISOString(), targetHours: state.lastTargetHours || 16 };
+      el.fastEditTitle.textContent = 'Add fast';
+    } else {
+      entry = state.history[idx];
+      el.fastEditTitle.textContent = 'Edit fast';
+    }
+    el.fastEditStartInput.value = toLocalInputValue(new Date(entry.startISO));
+    el.fastEditEndInput.value = toLocalInputValue(new Date(entry.endISO));
+    el.fastEditTargetInput.value = entry.targetHours;
+    el.fastEditModal.classList.remove('hidden');
+  }
+
+  el.addFastBtn.addEventListener('click', () => openFastEditModal(null));
+
+  el.fastEditCancelBtn.addEventListener('click', () => {
+    el.fastEditModal.classList.add('hidden');
+  });
+
+  el.fastEditSaveBtn.addEventListener('click', async () => {
+    const startVal = el.fastEditStartInput.value;
+    const endVal = el.fastEditEndInput.value;
+    const targetVal = Number(el.fastEditTargetInput.value);
+
+    if (!startVal || !endVal || !targetVal || targetVal <= 0) {
+      await showAlert('Missing info', 'Please fill in start, end, and a goal greater than 0.');
+      return;
+    }
+    const startDate = new Date(startVal);
+    const endDate = new Date(endVal);
+    if (endDate <= startDate) {
+      await showAlert('Invalid times', 'End time must be after start time.');
+      return;
+    }
+    if (endDate.getTime() > Date.now()) {
+      await showAlert('Invalid times', "End time can't be in the future.");
+      return;
+    }
+    const durationCheckH = (endDate - startDate) / 3600000;
+    if (durationCheckH > 720) {
+      await showAlert('Invalid times', "That fast is longer than 30 days — double check the start and end dates.");
+      return;
+    }
+
+    const newEntry = { startISO: startDate.toISOString(), endISO: endDate.toISOString(), targetHours: targetVal };
+    if (editingFastIndex === null) {
+      state.history.push(newEntry);
+    } else {
+      state.history[editingFastIndex] = newEntry;
+    }
+    state.history.sort((a, b) => new Date(b.startISO) - new Date(a.startISO));
+    save();
+    el.fastEditModal.classList.add('hidden');
+    renderHistory();
+    renderChart();
+  });
+
+  // ---------- Rendering: timer ----------
+  function formatElapsed(ms) {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
+  function render() {
+    if (state.current) {
+      el.mainActionBtn.textContent = 'End Fast';
+      el.mainActionBtn.classList.add('stop');
+      el.editStartBtn.classList.remove('hidden');
+      el.statusLabel.textContent = 'FASTING';
+      document.querySelectorAll('#targetPicker .preset').forEach(b => b.style.opacity = '0.4');
+      el.customTargetInput.disabled = true;
+
+      const finishDate = new Date(new Date(state.current.startISO).getTime() + state.current.targetHours * 3600000);
+      const finishStr = finishDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+      const finishWeekday = finishDate.toLocaleDateString(undefined, { weekday: 'short' });
+      el.finishTime.textContent = `${finishStr} ${finishWeekday}`;
+      el.finishTime.classList.remove('hidden');
+
+      startTick();
+    } else {
+      el.mainActionBtn.textContent = 'Start Fast';
+      el.mainActionBtn.classList.remove('stop');
+      el.editStartBtn.classList.add('hidden');
+      el.statusLabel.textContent = 'NOT FASTING';
+      el.subLabel.textContent = 'Tap start to begin';
+      el.subLabel.style.color = '';
+      el.elapsedTime.textContent = '00:00:00';
+      el.finishTime.classList.add('hidden');
+      el.finishTime.textContent = '';
+      el.ringProgress.style.stroke = 'var(--accent)';
+      el.ringProgress.style.strokeDashoffset = RING_CIRC;
+      document.querySelectorAll('#targetPicker .preset').forEach(b => b.style.opacity = '1');
+      el.customTargetInput.disabled = false;
+      setPresetUI(selectedTargetHours);
+      stopTick();
+    }
+  }
+
+  function startTick() {
+    stopTick();
+    tick();
+    tickInterval = setInterval(tick, 1000);
+  }
+  function stopTick() {
+    if (tickInterval) clearInterval(tickInterval);
+    tickInterval = null;
+  }
+
+  function tick() {
+    if (!state.current) return;
+    const start = new Date(state.current.startISO).getTime();
+    const now = Date.now();
+    const elapsedMs = now - start;
+    const targetMs = state.current.targetHours * 3600 * 1000;
+    el.elapsedTime.textContent = formatElapsed(elapsedMs);
+
+    const frac = Math.min(1, elapsedMs / targetMs);
+    el.ringProgress.style.strokeDashoffset = RING_CIRC * (1 - frac);
+
+    if (elapsedMs >= targetMs) {
+      el.ringProgress.style.stroke = 'var(--accent2)';
+      const overMs = elapsedMs - targetMs;
+      el.subLabel.textContent = `Goal reached · +${formatElapsed(overMs)} over`;
+      el.subLabel.style.color = '';
+      if (!state.current.goalNotified) {
+        state.current.goalNotified = true;
+        save();
+        if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+      }
+    } else {
+      el.ringProgress.style.stroke = 'var(--accent)';
+      const remainMs = targetMs - elapsedMs;
+      el.subLabel.textContent = formatElapsed(remainMs);
+      el.subLabel.style.color = 'var(--accent)';
+    }
+  }
+
+  // ---------- History list ----------
+  function renderHistory() {
+    const items = state.history;
+    el.historyList.innerHTML = '';
+    el.historyEmpty.classList.toggle('hidden', items.length > 0);
+
+    const visible = items.slice(0, historyRenderLimit);
+    visible.forEach((entry, idx) => {
+      const start = new Date(entry.startISO);
+      const end = new Date(entry.endISO);
+      const durationMs = end - start;
+      const durationH = durationMs / 3600000;
+      const hit = durationH >= entry.targetHours;
+
+      const li = document.createElement('li');
+      li.className = 'history-item';
+
+      const dateStr = formatShortDate(start);
+      const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+      li.innerHTML = `
+        <div class="hi-left">
+          <span class="hi-date">${dateStr}</span>
+          <span class="hi-range">${timeStr}</span>
+        </div>
+        <div class="hi-right">
+          <span class="hi-duration ${hit ? 'hit' : 'miss'}">${formatHoursShort(durationH)}</span>
+          <button class="hi-edit" data-idx="${idx}" aria-label="Edit">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+          <button class="hi-del" data-idx="${idx}" aria-label="Delete">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+        </div>
+      `;
+      el.historyList.appendChild(li);
+    });
+
+    document.querySelectorAll('.hi-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openFastEditModal(Number(btn.dataset.idx));
+      });
+    });
+
+    document.querySelectorAll('.hi-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ok = await showDialog({
+          title: 'Delete this fast?',
+          message: "This removes it from your history. This can't be undone.",
+          okText: 'Delete',
+          danger: true,
+        });
+        if (!ok) return;
+        const idx = Number(btn.dataset.idx);
+        state.history.splice(idx, 1);
+        save();
+        renderHistory();
+        renderChart();
+      });
+    });
+
+    renderStats();
+
+    const remaining = items.length - visible.length;
+    el.historyLoadMoreBtn.classList.toggle('hidden', remaining <= 0);
+    el.historyLoadMoreBtn.textContent = `Load more (${remaining} remaining)`;
+  }
+
+  el.historyLoadMoreBtn.addEventListener('click', () => {
+    historyRenderLimit += HISTORY_PAGE_SIZE;
+    renderHistory();
+  });
+
+  // Compact, consistent day-month-year format regardless of device locale, e.g. "8 Aug 25".
+  function formatShortDate(date) {
+    const day = date.getDate();
+    const month = date.toLocaleDateString(undefined, { month: 'short' });
+    const year = String(date.getFullYear()).slice(-2);
+    return `${day} ${month} ${year}`;
+  }
+
+  function formatHoursShort(h) {
+    const whole = Math.floor(h);
+    const min = Math.round((h - whole) * 60);
+    return min > 0 ? `${whole}h ${min}m` : `${whole}h`;
+  }
+
+  function dateKey(d) {
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  function renderStats() {
+    const items = state.history;
+    el.statCount.textContent = items.length;
+
+    if (items.length === 0) {
+      el.statAvg.textContent = '0h';
+      el.statLongest.textContent = '0h';
+      return;
+    }
+
+    let totalH = 0;
+    let longestH = 0;
+
+    items.forEach(e => {
+      const durationH = (new Date(e.endISO) - new Date(e.startISO)) / 3600000;
+      totalH += durationH;
+      if (durationH > longestH) longestH = durationH;
+    });
+
+    el.statAvg.textContent = formatHoursShort(totalH / items.length);
+    el.statLongest.textContent = `${Math.round(longestH)}h`;
+  }
+
+  // ---------- Chart ----------
+  function isSameMonth(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  }
+
+  function buildMonthBuckets(monthDate) {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const buckets = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      buckets.push({ key: dateKey(d), date: d, value: 0 });
+    }
+    const map = new Map(buckets.map(b => [b.key, b]));
+
+    // Split each fast's hours across every calendar day it actually spans, proportional to how
+    // much of it fell on each day — rather than dumping the whole duration onto the end date.
+    // This matters for every overnight fast, not just ones over 24h: a fast that runs 8pm-noon
+    // should show hours on both the day it started and the day it ended, not all on one or the
+    // other.
+    state.history.forEach(entry => {
+      const start = new Date(entry.startISO);
+      const end = new Date(entry.endISO);
+      let cursor = new Date(start);
+      let guard = 0;
+      while (cursor < end && guard < 40) {
+        const dayStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+        const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+        const segmentEnd = end < dayEnd ? end : dayEnd;
+        const hoursThisDay = (segmentEnd - cursor) / 3600000;
+        const key = dateKey(dayStart);
+        if (map.has(key)) map.get(key).value += hoursThisDay;
+        cursor = segmentEnd;
+        guard++;
+      }
+    });
+    return buckets;
+  }
+
+  el.chartPrevMonthBtn.addEventListener('click', () => {
+    currentChartMonth = new Date(currentChartMonth.getFullYear(), currentChartMonth.getMonth() - 1, 1);
+    renderChart();
+  });
+
+  el.chartNextMonthBtn.addEventListener('click', () => {
+    const next = new Date(currentChartMonth.getFullYear(), currentChartMonth.getMonth() + 1, 1);
+    if (next > new Date()) return; // can't navigate into the future
+    currentChartMonth = next;
+    renderChart();
+  });
+
+  function renderChart() {
+    if (!el.chartBars) return;
+    const buckets = buildMonthBuckets(currentChartMonth);
+    const goalHours = Math.min(24, state.lastTargetHours || 16);
+
+    el.chartMonthLabel.textContent = currentChartMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const now = new Date();
+    el.chartNextMonthBtn.disabled = isSameMonth(currentChartMonth, now);
+
+    el.chartBars.innerHTML = '';
+    el.chartLabels.innerHTML = '';
+
+    // goal reference line
+    const goalLine = document.createElement('div');
+    goalLine.className = 'chart-goal-line';
+    goalLine.style.top = `${(1 - goalHours / 24) * 100}%`;
+    el.chartBars.appendChild(goalLine);
+
+    const showEvery = 5;
+    buckets.forEach((b, idx) => {
+      const col = document.createElement('div');
+      col.className = 'chart-bar-col';
+      const bar = document.createElement('div');
+      const pct = Math.max(0, Math.min(100, (b.value / 24) * 100));
+      bar.className = 'chart-bar' + (b.value > 0 ? (b.value >= goalHours ? ' hit-goal' : ' has-value') : '');
+      bar.style.height = `${pct}%`;
+      col.appendChild(bar);
+      el.chartBars.appendChild(col);
+
+      const label = document.createElement('span');
+      const fromEnd = buckets.length - 1 - idx;
+      const dayNum = b.date.getDate();
+      label.textContent = (idx === 0 || idx === buckets.length - 1 || fromEnd % showEvery === 0) ? String(dayNum) : '';
+      el.chartLabels.appendChild(label);
+    });
+  }
+
+  // ---------- Export / Import ----------
+  function triggerImport() {
+    el.importFile.value = '';
+    el.importFile.click();
+  }
+
+  el.settingsExportBtn.addEventListener('click', performManualBackup);
+  el.settingsImportBtn.addEventListener('click', triggerImport);
+
+  el.importFile.addEventListener('change', () => {
+    const file = el.importFile.files && el.importFile.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        importData(data);
+      } catch (e) {
+        showAlert('Import failed', "Could not read that file — make sure it's a Fast Track export.");
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  async function importData(data) {
+    if (!data || !Array.isArray(data.history)) {
+      await showAlert('Import failed', "That file doesn't look like a valid Fast Track export.");
+      return;
+    }
+
+    const existingKeys = new Set(state.history.map(e => `${e.startISO}|${e.endISO}`));
+    let added = 0;
+    let skipped = 0;
+    data.history.forEach((entry) => {
+      if (!entry || !entry.startISO || !entry.endISO || !entry.targetHours) { skipped++; return; }
+      const start = new Date(entry.startISO);
+      const end = new Date(entry.endISO);
+      const durH = (end - start) / 3600000;
+      if (!(durH > 0) || durH > 720 || isNaN(start.getTime()) || isNaN(end.getTime())) { skipped++; return; }
+      const key = `${entry.startISO}|${entry.endISO}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        state.history.push({
+          startISO: entry.startISO,
+          endISO: entry.endISO,
+          targetHours: Number(entry.targetHours),
+        });
+        added++;
+      }
+    });
+    state.history.sort((a, b) => new Date(b.startISO) - new Date(a.startISO));
+
+    let importedCurrent = false;
+    if (!state.current && data.current && data.current.startISO && data.current.targetHours) {
+      const proceed = await showDialog({
+        title: 'Resume active fast?',
+        message: 'This file also has an in-progress fast. Import it as your active fast?',
+        okText: 'Resume',
+      });
+      if (proceed) {
+        state.current = {
+          startISO: data.current.startISO,
+          targetHours: Number(data.current.targetHours),
+          goalNotified: !!data.current.goalNotified,
+        };
+        importedCurrent = true;
+      }
+    }
+
+    save();
+    render();
+    renderHistory();
+    renderChart();
+    const skippedMsg = skipped > 0 ? ` (${skipped} skipped — missing or implausible data)` : '';
+    await showAlert('Import complete', `Imported ${added} fast${added === 1 ? '' : 's'}${importedCurrent ? ' and resumed your active fast' : ''}.${skippedMsg}`);
+  }
+
+  el.resetDataBtn.addEventListener('click', async () => {
+    const ok = await showDialog({
+      title: 'Clear all data?',
+      message: "This clears all logged fasts and any active fast. This can't be undone.",
+      okText: 'Clear',
+      danger: true,
+    });
+    if (!ok) return;
+    state.history = [];
+    state.current = null;
+    save();
+    render();
+    renderHistory();
+    renderChart();
+  });
+
+  // ---------- Backup to Downloads ----------
+  // Design notes:
+  // - A downloaded file lives in the OS-level Downloads folder, which "Clear browsing data" in
+  //   Chrome does NOT touch — unlike localStorage, which is exactly what gets wiped by that action.
+  //   This is a genuinely separate safety net from local storage, not just a convenience.
+  // - Automatic download happens unconditionally every time a fast ends (see endFast()) — no
+  //   setting to turn it off, no throttling. Manual "Export" (below) triggers the exact same
+  //   function, so both produce identically-named files: fast-track-backup-<date>.json.
+  // - There's no way for a web app to remember a specific folder on Android and silently overwrite
+  //   a file in it (that part of the File System Access API isn't supported on Android Chrome) —
+  //   so every backup is a new file in the default Downloads folder, named with the date.
+
+  function buildBackupFile() {
+    const payload = {
+      app: 'fast-track',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      history: state.history,
+      current: state.current,
+    };
+    const stamp = new Date().toISOString().slice(0, 10);
+    const filename = `fast-track-backup-${stamp}.json`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    return { blob, filename };
+  }
+
+  function triggerBackupDownload() {
+    const { blob, filename } = buildBackupFile();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Feature-detected: file sharing via navigator.share isn't available on every
+  // browser/OS combo, so the Share button only appears when it will actually work.
+  const shareFilesSupported = (() => {
+    if (!navigator.share || !navigator.canShare) return false;
+    try {
+      // Probe with the same type/extension we'll actually share (see below) so detection
+      // matches reality — Chromium restricts Web Share file types to a curated allowlist
+      // (audio/image/pdf/video/text), and testing with a mismatched type risks canShare()
+      // saying yes while the real share() call later rejects it.
+      const probe = new File(['{}'], 'probe.txt', { type: 'text/plain' });
+      return navigator.canShare({ files: [probe] });
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  if (shareFilesSupported) {
+    el.settingsShareBtn.classList.remove('hidden');
+    el.settingsShareBtn.addEventListener('click', async () => {
+      const { blob, filename } = buildBackupFile();
+      // Share as .txt/text/plain rather than .json/application/json: Chromium's Web Share
+      // API only permits a curated allowlist of file types, and JSON isn't reliably on it —
+      // the content is unchanged, still valid JSON, just wrapped in a permitted file type.
+      // Import doesn't care about file extension, only content, so this changes nothing
+      // about compatibility with the rest of the app.
+      const shareFilename = filename.replace(/\.json$/, '.txt');
+      const file = new File([blob], shareFilename, { type: 'text/plain' });
+      try {
+        await navigator.share({ files: [file], title: 'Fast Track backup' });
+      } catch (e) {
+        if (e && e.name !== 'AbortError') {
+          await showAlert('Share failed', "Couldn't open the share sheet — try Export instead.");
+        }
+      }
+    });
+  }
+
+  function performManualBackup() {
+    triggerBackupDownload();
+  }
+
+  // ---------- Init ----------
+  setPresetUI(selectedTargetHours);
+  applyTheme();
+  syncSettingsUI();
+  checkNotificationCatchUp();
+  render();
+
+  // ---------- Service worker ----------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
+})();
