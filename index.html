@@ -1,319 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>Fast Track</title>
-<meta name="theme-color" content="#f4f5f7">
-<meta name="description" content="Simple intermittent fasting timer">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fast Track App</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
 
-<!-- PWA -->
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Fast Track">
+  <!-- Firebase Web SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
 
-<link rel="stylesheet" href="style.css">
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCEEFr5OacmCb-qMhE2m70xTfDzA6TMU9c",
+      authDomain: "fast-track-app-tt.firebaseapp.com",
+      projectId: "fast-track-app-tt",
+      storageBucket: "fast-track-app-tt.firebasestorage.app",
+      messagingSenderId: "368091780461",
+      appId: "1:368091780461:web:2eb68c7d222a9b67fdf664"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+  </script>
 </head>
 <body>
-
-<div class="app">
-
-  <header class="topbar">
-    <h1 id="appTitle">Fast Track</h1>
-    <div class="topbar-actions">
-      <button id="historyBtn" class="icon-btn" aria-label="History">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z"/></svg>
-      </button>
-      <button id="settingsBtnTop" class="icon-btn" aria-label="Settings">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.58-.22l-2.39.96a7.3 7.3 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.14.56-1.62.94l-2.39-.96a.5.5 0 0 0-.58.22L2.63 8.48a.5.5 0 0 0 .12.61l2.03 1.58c-.05.3-.08.63-.08.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.14.24.4.32.58.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.28.27.42.5.42h4c.24 0 .46-.14.5-.42l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96c.24.09.44 0 .58-.22l1.92-3.32a.5.5 0 0 0-.12-.61zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
-      </button>
-    </div>
-  </header>
+  <!-- Header bar showing who is logged in -->
+  <div id="auth-bar" style="padding: 10px; background: #222; color: #fff; display: flex; justify: space-between; align-items: center;">
+    <span id="user-display">Not logged in</span>
+    <button id="auth-btn" onclick="toggleAuth()" style="padding: 6px 12px; cursor: pointer;">Log In with Google</button>
+  </div>
 
   <main>
-    <!-- MAIN TIMER VIEW -->
-    <section id="timerView" class="view active">
-
-      <div class="ring-wrap">
-        <svg class="ring" viewBox="0 0 260 260">
-          <circle class="ring-track" cx="130" cy="130" r="115"></circle>
-          <circle id="ringProgress" class="ring-progress" cx="130" cy="130" r="115"></circle>
-        </svg>
-        <div class="ring-center">
-          <span id="statusLabel" class="status-label">NOT FASTING</span>
-          <span id="elapsedTime" class="elapsed-time">00:00:00</span>
-          <span id="subLabel" class="sub-label">Tap start to begin</span>
-          <span id="finishTime" class="finish-time hidden"></span>
-        </div>
-      </div>
-
-      <div id="targetPicker" class="target-picker">
-        <button class="preset" data-hours="16">16:8</button>
-        <button class="preset" data-hours="18">18:6</button>
-        <button class="preset" data-hours="20">20:4</button>
-        <button class="preset" data-hours="24">OMAD</button>
-        <button class="preset" data-hours="custom">Custom</button>
-      </div>
-
-      <div id="customTargetWrap" class="custom-target-wrap hidden">
-        <input type="number" id="customTargetInput" min="1" max="72" step="0.5" value="16">
-        <span>hours</span>
-      </div>
-
-      <button id="mainActionBtn" class="main-action-btn">Start Fast</button>
-      <button id="editStartBtn" class="text-btn hidden">Edit start time</button>
-
-    </section>
-
-    <!-- HISTORY VIEW -->
-    <section id="historyView" class="view">
-      <div class="history-header">
-        <button id="backBtn" class="icon-btn" aria-label="Back">
-          <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h2>History</h2>
-      </div>
-
-      <div class="stats-row">
-        <div class="stat-box">
-          <span id="statAvg" class="stat-value">0h</span>
-          <span class="stat-label">Avg length</span>
-        </div>
-        <div class="stat-box">
-          <span id="statCount" class="stat-value">0</span>
-          <span class="stat-label">Total fasts</span>
-        </div>
-        <div class="stat-box">
-          <span id="statLongest" class="stat-value">0h</span>
-          <span class="stat-label">Longest fast</span>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-card-header">
-          <span class="chart-title">Hours per day</span>
-          <div class="month-nav">
-            <button id="chartPrevMonthBtn" class="month-nav-btn" aria-label="Previous month">
-              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-            </button>
-            <span id="chartMonthLabel" class="month-nav-label">Month</span>
-            <button id="chartNextMonthBtn" class="month-nav-btn" aria-label="Next month">
-              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
-            </button>
-          </div>
-        </div>
-        <div class="chart-wrap">
-          <div id="chartBars" class="chart-bars"></div>
-          <div class="chart-axis">
-            <span>24h</span><span>18h</span><span>12h</span><span>6h</span><span>0h</span>
-          </div>
-        </div>
-        <div id="chartLabels" class="chart-labels"></div>
-      </div>
-
-      <div class="section-label-row">
-        <span class="section-label">Recent fasts</span>
-        <button id="addFastBtn" class="text-btn accent">+ Add fast</button>
-      </div>
-      <ul id="historyList" class="history-list"></ul>
-      <p id="historyEmpty" class="empty-msg hidden">No fasts logged yet.</p>
-      <button id="historyLoadMoreBtn" class="chip-btn load-more-btn hidden">Load more</button>
-    </section>
-
-    <!-- SETTINGS VIEW -->
-    <section id="settingsView" class="view">
-      <div class="history-header">
-        <button id="settingsBackBtn" class="icon-btn" aria-label="Back">
-          <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h2>Settings</h2>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-label">Appearance</div>
-        <div id="themeToggle" class="period-toggle theme-toggle">
-          <button class="period-btn theme-btn" data-theme="light">Light</button>
-          <button class="period-btn theme-btn" data-theme="dark">Dark</button>
-          <button class="period-btn theme-btn" data-theme="system">System</button>
-        </div>
-      </div>
-
-
-
-      <div class="settings-section">
-        <div class="settings-row">
-          <div>
-            <div class="settings-label">Notifications</div>
-            <div class="settings-sublabel" id="notifStatusText">Not enabled</div>
-          </div>
-          <button id="settingsNotifToggle" class="toggle-switch" role="switch" aria-checked="false">
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-        <div class="settings-row">
-          <div>
-            <div class="settings-label">Remind me exactly at goal</div>
-            <div class="settings-sublabel">Notify the moment your target is reached</div>
-          </div>
-          <button id="goalReminderToggle" class="toggle-switch" role="switch" aria-checked="true">
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-        <div class="settings-row">
-          <div>
-            <div class="settings-label">Remind me before goal</div>
-            <div class="settings-sublabel">Extra heads-up before your fast ends</div>
-          </div>
-          <button id="preReminderToggle" class="toggle-switch" role="switch" aria-checked="false">
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-        <div id="preReminderMinutesWrap" class="settings-row sub-row hidden">
-          <div class="settings-label">Remind me</div>
-          <select id="preReminderSelect" class="select-input">
-            <option value="15">15 min before</option>
-            <option value="30">30 min before</option>
-            <option value="60">1 hour before</option>
-          </select>
-        </div>
-        <div class="settings-row">
-          <div>
-            <div class="settings-label">Remind me to start a fast</div>
-            <div class="settings-sublabel">Daily nudge if you haven't started by then</div>
-          </div>
-          <button id="startReminderToggle" class="toggle-switch" role="switch" aria-checked="false">
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-        <div id="startReminderTimeWrap" class="settings-row sub-row hidden">
-          <div class="settings-label">Remind me at</div>
-          <div class="time-select-group">
-            <select id="startReminderHourSelect" class="select-input">
-            <option value="00">00</option>
-            <option value="01">01</option>
-            <option value="02">02</option>
-            <option value="03">03</option>
-            <option value="04">04</option>
-            <option value="05">05</option>
-            <option value="06">06</option>
-            <option value="07">07</option>
-            <option value="08">08</option>
-            <option value="09">09</option>
-            <option value="10">10</option>
-            <option value="11">11</option>
-            <option value="12">12</option>
-            <option value="13">13</option>
-            <option value="14">14</option>
-            <option value="15">15</option>
-            <option value="16">16</option>
-            <option value="17">17</option>
-            <option value="18">18</option>
-            <option value="19">19</option>
-            <option value="20">20</option>
-            <option value="21">21</option>
-            <option value="22">22</option>
-            <option value="23">23</option>
-            </select>
-            <span class="time-sep">:</span>
-            <select id="startReminderMinuteSelect" class="select-input">
-            <option value="00">00</option>
-            <option value="05">05</option>
-            <option value="10">10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-            <option value="25">25</option>
-            <option value="30">30</option>
-            <option value="35">35</option>
-            <option value="40">40</option>
-            <option value="45">45</option>
-            <option value="50">50</option>
-            <option value="55">55</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-label">Data</div>
-        <div class="data-actions">
-          <button id="settingsExportBtn" class="chip-btn">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
-            Export
-          </button>
-          <button id="settingsShareBtn" class="chip-btn hidden">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L7.04 9.81C6.5 9.31 5.79 9 5 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
-            Share
-          </button>
-          <button id="settingsImportBtn" class="chip-btn">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 15v4H5v-4H3v4c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-4h-2zM12 3 6.5 8.5l1.41 1.41L11 6.83V16h2V6.83l3.09 3.08L17.5 8.5z"/></svg>
-            Import
-          </button>
-        </div>
-        <button id="resetDataBtn" class="danger-btn">Clear all data</button>
-      </div>
-    </section>
+    <h1>Fast Track App</h1>
+    <!-- App UI components load here -->
   </main>
-</div>
 
-<input type="file" id="importFile" accept="application/json,.json" class="hidden">
-
-<!-- EDIT START TIME MODAL (active fast) -->
-<div id="editModal" class="modal hidden">
-  <div class="modal-card">
-    <h3>Edit start time</h3>
-    <input type="datetime-local" id="editStartInput">
-    <div class="modal-actions">
-      <button id="editCancelBtn" class="text-btn">Cancel</button>
-      <button id="editSaveBtn" class="main-action-btn small">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- END FAST MODAL -->
-<div id="endFastModal" class="modal hidden">
-  <div class="modal-card">
-    <h3>End fast</h3>
-    <label class="field-label">Finished at</label>
-    <input type="datetime-local" id="endFastInput">
-    <div class="modal-actions">
-      <button id="endFastCancelBtn" class="text-btn">Cancel</button>
-      <button id="endFastConfirmBtn" class="main-action-btn small stop">End Fast</button>
-    </div>
-  </div>
-</div>
-
-<!-- ADD / EDIT PAST FAST MODAL -->
-<div id="fastEditModal" class="modal hidden">
-  <div class="modal-card">
-    <h3 id="fastEditTitle">Edit fast</h3>
-    <label class="field-label">Start</label>
-    <input type="datetime-local" id="fastEditStartInput">
-    <label class="field-label">End</label>
-    <input type="datetime-local" id="fastEditEndInput">
-    <label class="field-label">Goal (hours)</label>
-    <input type="number" id="fastEditTargetInput" min="1" max="72" step="0.5">
-    <div class="modal-actions">
-      <button id="fastEditCancelBtn" class="text-btn">Cancel</button>
-      <button id="fastEditSaveBtn" class="main-action-btn small">Save</button>
-    </div>
-  </div>
-</div>
-
-<!-- GENERIC CONFIRM / ALERT DIALOG -->
-<div id="dialogModal" class="modal hidden">
-  <div class="modal-card">
-    <h3 id="dialogTitle"></h3>
-    <p id="dialogMessage" class="dialog-message"></p>
-    <div class="modal-actions">
-      <button id="dialogCancelBtn" class="text-btn">Cancel</button>
-      <button id="dialogOkBtn" class="main-action-btn small">OK</button>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
