@@ -1,3 +1,26 @@
+// Tell Firebase we want to use Google for authentication
+const provider = new firebase.auth.GoogleAuthProvider();
+
+// Function to pop up the Google Login window
+function loginWithGoogle() {
+  auth.signInWithPopup(provider)
+    .then((result) => {
+      console.log("Logged in as:", result.user.displayName);
+    })
+    .catch((error) => console.error("Login failed:", error));
+}
+
+// Automatically check if the user is logged in
+auth.onAuthStateChanged((user) => {
+  if (user) {
+    console.log("User is signed in:", user.email);
+    // Load their saved data from Firestore
+    loadUserData(user.uid);
+  } else {
+    // If not logged in, prompt them to sign in
+    loginWithGoogle();
+  }
+});
 const auth = firebase.auth();
 const db = firebase.firestore();
 
