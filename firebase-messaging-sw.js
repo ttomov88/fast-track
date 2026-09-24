@@ -12,11 +12,10 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Receive background push notifications on phone lock screen
 messaging.onBackgroundMessage((payload) => {
-  const notificationTitle = payload.notification?.title || 'Fast Tracker Alert';
+  const notificationTitle = payload.notification.title || 'Fast Track Alert';
   const notificationOptions = {
-    body: payload.notification?.body || 'Your target fasting time is complete!',
+    body: payload.notification.body || 'You have an update regarding your fast.',
     icon: '/icons/icon-192.png'
   };
 
