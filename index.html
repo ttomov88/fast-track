@@ -27,16 +27,19 @@
   </script>
 </head>
 <body>
-  <!-- Header bar showing who is logged in -->
-  <div id="auth-bar" style="padding: 10px; background: #222; color: #fff; display: flex; justify: space-between; align-items: center;">
-    <span id="user-display">Not logged in</span>
-    <button id="auth-btn" onclick="toggleAuth()" style="padding: 6px 12px; cursor: pointer;">Log In with Google</button>
+  <div id="auth-bar" style="padding: 12px; background: #1f2937; color: #ffffff; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif;">
+    <span id="user-display">Checking authentication...</span>
+    <button id="auth-btn" onclick="toggleAuth()" style="padding: 6px 14px; background-color: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Log In with Google</button>
   </div>
 
-  <main>
-    <h1>Fast Track App</h1>
-    <!-- App UI components load here -->
-  </main>
+  <div id="app-container" style="display: none;">
+    <!-- App UI rendered here -->
+    <main style="padding: 20px; font-family: sans-serif;">
+      <h1>Fast Track Dashboard</h1>
+      <p>Your fasts are automatically synchronized with Cloud Firestore.</p>
+      <button onclick="requestNotificationPermission()" style="padding: 8px 16px; background-color: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Enable Phone Notifications</button>
+    </main>
+  </div>
 
   <script src="app.js"></script>
 </body>
