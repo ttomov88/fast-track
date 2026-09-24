@@ -7,4 +7,18 @@ firebase.initializeApp({
   projectId: "fast-track-app-tt",
   storageBucket: "fast-track-app-tt.firebasestorage.app",
   messagingSenderId: "368091780461",
-  appId: "1:368091780461:web:2eb68c7d222a9b67fdf664Ready when you are. What are we diving into today?
+  appId: "1:368091780461:web:2eb68c7d222a9b67fdf664"
+});
+
+const messaging = firebase.messaging();
+
+// Receive background push notifications on phone lock screen
+messaging.onBackgroundMessage((payload) => {
+  const notificationTitle = payload.notification?.title || 'Fast Tracker Alert';
+  const notificationOptions = {
+    body: payload.notification?.body || 'Your target fasting time is complete!',
+    icon: '/icons/icon-192.png'
+  };
+
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});
