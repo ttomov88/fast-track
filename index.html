@@ -16,6 +16,14 @@
 <meta name="apple-mobile-web-app-title" content="Fast Track">
 
 <link rel="stylesheet" href="style.css">
+const firebaseConfig = {
+  apiKey: "AIzaSyCEEFr5OacmCb-qMhE2m70xTfDzA6TMU9c",
+  authDomain: "fast-track-app-tt.firebaseapp.com",
+  projectId: "fast-track-app-tt",
+  storageBucket: "fast-track-app-tt.firebasestorage.app",
+  messagingSenderId: "368091780461",
+  appId: "1:368091780461:web:2eb68c7d222a9b67fdf664"
+};
 </head>
 <body>
 
@@ -150,6 +158,15 @@
             <div class="settings-sublabel" id="notifStatusText">Not enabled</div>
           </div>
           <button id="settingsNotifToggle" class="toggle-switch" role="switch" aria-checked="false">
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">Remind me exactly at goal</div>
+            <div class="settings-sublabel">Notify the moment your target is reached</div>
+          </div>
+          <button id="goalReminderToggle" class="toggle-switch" role="switch" aria-checked="true">
             <span class="toggle-knob"></span>
           </button>
         </div>

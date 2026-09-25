@@ -16,6 +16,7 @@
       history: [],
       lastTargetHours: 16,
       notificationsEnabled: true,
+      remindAtGoal: true,
       theme: 'light',
     };
   }
@@ -82,6 +83,7 @@
     themeToggle: document.getElementById('themeToggle'),
     settingsNotifToggle: document.getElementById('settingsNotifToggle'),
     notifStatusText: document.getElementById('notifStatusText'),
+    goalReminderToggle: document.getElementById('goalReminderToggle'),
     settingsExportBtn: document.getElementById('settingsExportBtn'),
     settingsShareBtn: document.getElementById('settingsShareBtn'),
     settingsImportBtn: document.getElementById('settingsImportBtn'),
@@ -338,6 +340,9 @@
       el.notifStatusText.textContent = 'Not enabled';
     }
 
+    el.goalReminderToggle.classList.toggle('on', !!state.remindAtGoal);
+    el.goalReminderToggle.setAttribute('aria-checked', String(!!state.remindAtGoal));
+
     applyTheme();
   }
 
@@ -365,6 +370,12 @@
     }
     // already granted — just toggle app-level preference
     state.notificationsEnabled = !notificationsActive();
+    save();
+    syncSettingsUI();
+  });
+
+  el.goalReminderToggle.addEventListener('click', () => {
+    state.remindAtGoal = !state.remindAtGoal;
     save();
     syncSettingsUI();
   });
@@ -405,7 +416,7 @@
     if (!state.current.goalNotified && elapsedMs >= targetMs) {
       state.current.goalNotified = true;
       save();
-      notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+      if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
     }
   }
 
@@ -592,7 +603,7 @@
       if (!state.current.goalNotified) {
         state.current.goalNotified = true;
         save();
-        notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
+        if (state.remindAtGoal) notify('Fasting goal reached', `You hit your ${state.current.targetHours}h target. Keep going or tap End Fast.`);
       }
     } else {
       el.ringProgress.style.stroke = 'var(--accent)';
