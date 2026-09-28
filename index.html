@@ -141,8 +141,6 @@
         </div>
       </div>
 
-
-
       <div class="settings-section">
         <div class="settings-row">
           <div>
@@ -232,6 +230,20 @@
     </div>
   </div>
 </div>
+
+<!-- LocalForage library for persistent IndexedDB storage -->
+<script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
+
+<script>
+  // Request persistent storage protection from Chrome/Android
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().then(granted => {
+      if (granted) {
+        console.log("Storage marked as persistent. Will survive browser data clears.");
+      }
+    });
+  }
+</script>
 
 <script src="app.js"></script>
 </body>
